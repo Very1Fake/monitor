@@ -1,0 +1,9 @@
+consumer_tick: 1
+log_level: 5
+log_mode: 0
+log_time: true
+producer_tick: 1
+production: false
+target_queue_size: 32
+task_queue_get_wait: 1
+task_queue_size: 64
