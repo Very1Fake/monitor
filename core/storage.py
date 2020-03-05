@@ -3,14 +3,21 @@ from yaml import safe_load
 # Main
 production: bool = False  # If True monitor will try to avoid fatal errors as possible
 
-# Core
-producer_tick: float = 1  # Delta time for queue manage (in seconds)
-consumer_tick: float = .5  # Delta time for worker run loop
+# Collector
+collector_tick: float = .1  # Delta time for queue manage (in seconds)
+collector_wait: float = 10  # Timeout to join() when turning off monitor (in seconds)
+targets_hashes_size: int = 1024
+
+# Worker
+worker_tick: float = 1  # Delta time for worker run loop
+worker_wait: float = 5
 
 # Queues
 task_queue_size: int = 64  # Size for task_queue (will be waiting if full)
 task_queue_get_wait: float = 1  # Time for wait for get() (in seconds)
-target_queue_size: int = 32  # Size for target_queue (will be waiting if full)
+task_queue_put_wait: float = 8
+target_queue_size: int = 64  # Size for target_queue (will be waiting if full)
+target_queue_put_wait: float = 8
 
 # Logger
 log_level: int = 5  # (5 - Test, 4 - Debug, 3 - Info, 2 - Warn, 1 - Error, 0 - Fatal)

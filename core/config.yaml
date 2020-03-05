@@ -1,9 +1,14 @@
-consumer_tick: 1
+collector_tick: 0.1
+collector_wait: 10
 log_level: 5
 log_mode: 0
 log_time: true
-producer_tick: 1
 production: false
-target_queue_size: 32
+target_queue_put_wait: 8
+target_queue_size: 64
+targets_hashes_size: 1024
 task_queue_get_wait: 1
+task_queue_put_wait: 8
 task_queue_size: 64
+worker_tick: 1
+worker_wait: 5

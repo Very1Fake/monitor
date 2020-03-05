@@ -1,6 +1,6 @@
 import os
 import threading
-from queue import Queue, PriorityQueue, Empty
+from queue import Queue, PriorityQueue, Empty, Full
 from time import sleep, time
 from typing import Tuple
 
@@ -16,28 +16,35 @@ from . import storage
 # TODO: FIX target_done in queue
 
 
-class ProducerError(Exception):
+class MonitorError(Exception):
     pass
 
 
-class Producer(threading.Thread):
+class CollectorError(Exception):
+    pass
+
+
+class WorkerError(Exception):
+    pass
+
+
+class Collector(threading.Thread):
     def __init__(
             self,
-            lock: threading.Lock,
             script_manager: scripts.ScriptManager,
             storage: dict,
             task_queue: PriorityQueue,
             target_queue: Queue
     ):
-        super().__init__(name='Producer', daemon=True)
+        super().__init__(name='Collector', daemon=True)
         self.log: logger.Logger = logger.Logger(self.name)
-        self.lock: threading.Lock = lock
+        self.lock: threading.Lock = threading.Lock()
         self.script_manager: scripts.ScriptManager = script_manager
         self.storage: dict = storage
         self.task_queue: PriorityQueue = task_queue
         self.target_queue: Queue = target_queue
         self.schedule_indices: library.Schedule = library.Schedule()
-        self.schedule_targets: library.Schedule = library.Schedule()  # TODO: Fix duplicates
+        self.schedule_targets: library.UniqueSchedule = library.UniqueSchedule(self.storage['targets_hashes_size'])
 
     def reset_index(self):
         self.schedule_indices.clear()
@@ -50,7 +57,7 @@ class Producer(threading.Thread):
                 if self.storage['production']:
                     self.log.error(f'Unknown index while resetting index "{i}"')
                 else:
-                    self.log.fatal(ProducerError(f'Unknown index while resetting index "{i}"'))
+                    self.log.fatal(CollectorError(f'Unknown index while resetting index "{i}"'))
 
     def insert_index(self, index: api.IndexType):
         if isinstance(index, api.IndexInterval):
@@ -59,7 +66,7 @@ class Producer(threading.Thread):
             if self.storage['production']:
                 self.log.error(f'Unknown index "{index}"')
             else:
-                self.log.fatal(ProducerError(f'Unknown index "{index}"'))
+                self.log.fatal(CollectorError(f'Unknown index "{index}"'))
 
     def reindex(self, start: float):
         to_delete: Tuple[float] = ()
@@ -73,7 +80,7 @@ class Producer(threading.Thread):
                 if self.storage['production']:
                     self.log.error(f'Wrong target list received from "{v.script}"')
                 else:
-                    self.log.fatal(ProducerError(f'Wrong target list received from "{v.script}"'))
+                    self.log.fatal(CollectorError(f'Wrong target list received from "{v.script}"'))
             if isinstance(v, api.IndexInterval):
                 to_insert += (v,)
                 to_delete += (k,)
@@ -84,7 +91,10 @@ class Producer(threading.Thread):
     def insert_targets(self, targets: Tuple[api.TargetType]):
         for i in targets:
             if isinstance(i, api.IntervalTarget):
-                self.schedule_targets[time() + i.interval] = i
+                try:
+                    self.schedule_targets[time() + i.interval] = i
+                except ValueError:
+                    pass
             elif isinstance(i, api.CompletedTarget):
                 pass  # TODO: CompletedTargetEvent
             elif isinstance(i, api.LostTarget):
@@ -93,7 +103,13 @@ class Producer(threading.Thread):
     def send_tasks(self, start: float):
         ids: Tuple[float] = ()
         for k, v in self.schedule_targets.get_slice_gen(start):  # TODO: Script unload protection
-            self.task_queue.put(library.PrioritizedItem(100, v))
+            try:
+                self.task_queue.put(library.PrioritizedItem(100, v), timeout=self.storage['task_queue_put_wait'])
+            except Full:
+                if self.storage['production']:
+                    self.log.error(f'Target lost: {v}')
+                else:
+                    self.log.fatal(CollectorError(f'Target lost: {v}'))
             ids += (k,)
         self.schedule_targets.pop_item(ids)
 
@@ -124,21 +140,20 @@ class Producer(threading.Thread):
                 self.log.info('Closing thread')
                 break
             delta: float = time() - start
-            sleep(self.storage['producer_tick'] - delta if self.storage['producer_tick'] - delta >= 0 else 0)
+            sleep(self.storage['collector_tick'] - delta if self.storage['collector_tick'] - delta >= 0 else 0)
 
 
-class Consumer(threading.Thread):
+class Worker(threading.Thread):
     def __init__(
             self,
-            lock: threading.Lock,
             script_manager: scripts.ScriptManager,
             storage: dict,
             task_queue: PriorityQueue,
             target_queue: Queue,
     ):
-        super().__init__(name='Consumer', daemon=True)
-        self.log = logger.Logger(self.name)
-        self.lock = lock
+        super().__init__(name='Worker', daemon=True)
+        self.log: logger.Logger = logger.Logger(self.name)
+        self.lock: threading.Lock = threading.Lock()
         self.script_manager: scripts.ScriptManager = script_manager
         self.storage: dict = storage
         self.task_queue: PriorityQueue = task_queue
@@ -149,7 +164,13 @@ class Consumer(threading.Thread):
         status: api.StatusType = self.script_manager.parsers[target.script]().execute(target.data)
         if isinstance(status, api.StatusWaiting):
             self.log.debug(f'Result: {status}')
-            self.target_queue.put(status.target)
+            try:
+                self.target_queue.put(status.target, timeout=self.storage['target_queue_put_wait'])
+            except Full:
+                if self.storage['production']:
+                    self.log.error(f'Target lost: {status.target}')
+                else:
+                    self.log.fatal(WorkerError(f'Target lost: {status.target}'))
         elif isinstance(status, api.StatusSuccess):
             self.log.info(f'Item now available: {status.result}')
         elif isinstance(status, api.StatusFail):
@@ -160,7 +181,7 @@ class Consumer(threading.Thread):
             if self.storage['production']:
                 self.log.error(f'Unknown status received while executing "{target}"')
             else:
-                self.log.fatal(ProducerError(f'Unknown status received while executing "{target}"'))
+                self.log.fatal(CollectorError(f'Unknown status received while executing "{target}"'))
             return True
         return True
 
@@ -181,7 +202,7 @@ class Consumer(threading.Thread):
                 self.log.info('Closing thread')
                 break
             delta: float = time() - start
-            sleep(self.storage['consumer_tick'] - delta if self.storage['consumer_tick'] - delta >= 0 else 0)
+            sleep(self.storage['worker_tick'] - delta if self.storage['worker_tick'] - delta >= 0 else 0)
 
 
 class Main:
@@ -231,21 +252,22 @@ class Main:
 
     def start(self):
         self.check_config()
-        self.update_storage()
         self.turn_on()
 
-        producer = Producer(self.lock, self.script_manager, self.storage, self.task_queue, self.target_queue)
-        consumer = Consumer(self.lock, self.script_manager, self.storage, self.task_queue, self.target_queue)
+        collector = Collector(self.script_manager, self.storage, self.task_queue, self.target_queue)
+        worker = Worker(self.script_manager, self.storage, self.task_queue, self.target_queue)
 
-        producer.start()
-        consumer.start()
+        collector.start()
+        worker.start()
 
         try:
-            while True:
-                sleep(1)
+            collector.join()
+            self.log.fatal(MonitorError('Collector unexpected has turned off'))
         except KeyboardInterrupt:
+            self.log.info('Signal Interrupt!')
+        finally:
             self.log.info('Turning off...')
             self.turn_off()
-            consumer.join(60)
-            producer.join(120)
+            worker.join(self.storage['collector_wait'])
+            collector.join(self.storage['worker_wait'])
             self.log.info('Done')

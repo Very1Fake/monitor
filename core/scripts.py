@@ -2,9 +2,13 @@ import os
 import sys
 from hashlib import sha1
 from importlib import import_module
+from platform import python_implementation
 from types import ModuleType
 
-from _hashlib import Hash
+if python_implementation() == 'CPython':
+    from _hashlib import HASH as Hash
+else:
+    from _hashlib import Hash as Hash
 from checksumdir import dirhash
 from yaml import safe_load
 

@@ -1,4 +1,4 @@
-checksumdir==1.1.7
-dataclasses==0.7
 termcolor==1.1.0
+dataclasses>=0.6
+checksumdir==1.1.7
 PyYAML==5.3

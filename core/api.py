@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import Tuple, TypeVar, List, Any
-
 from dataclasses import dataclass
+from hashlib import sha1
+from typing import Tuple, TypeVar, List, Any
 
 # TODO: Logger for Parser
 
@@ -65,6 +65,17 @@ class IntervalTarget(Target):
     interval: float
     name: str
 
+    def hash(self) -> int:
+        try:
+            return int(sha1(
+                self.script.encode() + str(hash(self.data)).encode() + str(self.interval).encode() + self.name.encode()
+            ).hexdigest(), 16)
+        except TypeError:
+            return int(sha1(self.script.encode() + str(self.interval).encode() + self.name.encode()).hexdigest(), 16)
+
+    def __hash__(self) -> int:
+        return hash(self.hash())
+
 
 @dataclass
 class ScheduledTarget(Target):  # DON'T USE
@@ -84,6 +95,12 @@ class CompletedTarget(Target):
 class LostTarget(Target):
     message: str = ''
 
+    def hash(self) -> int:
+        return int(sha1(self.message).hexdigest(), 16)
+
+    def __hash__(self) -> int:
+        return hash(self.hash())
+
 
 # Status classes
 
@@ -98,7 +115,6 @@ StatusType = TypeVar('StatusType', bound=Status)
 @dataclass
 class StatusSuccess(Status):
     result: Result
-    target: TargetType
 
 
 @dataclass
