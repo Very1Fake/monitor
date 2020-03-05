@@ -1,10 +1,16 @@
+import os
+
 from termcolor import colored
 
 from . import library as lib
 from . import storage
 
-
 # TODO: Log to file (for mode 2 and 3)
+
+
+if not os.path.isdir(storage.logs_folder):
+    os.makedirs(storage.logs_folder)
+log_file = open(f'{storage.logs_folder}{lib.get_time(storage.log_utc_time)}.log', 'w+')  # TODO: Fix here
 
 
 class LoggerError(Exception):
@@ -14,39 +20,62 @@ class LoggerError(Exception):
 class Logger:
     def __init__(self, name: str):
         self.name = name
-        self.mode = 1
 
     def test(self, msg: str):
         if storage.log_level >= 5:
-            if self.mode == 1 or self.mode == 3:
-                print(f"[{lib.get_time(storage.log_time)}] [{colored('TEST', 'magenta')}] [{self.name}]: {msg}")
+            if storage.log_mode == 1 or storage.log_mode == 3:
+                print(f"[{lib.get_time(storage.log_utc_time)}] [{colored('TEST', 'magenta')}] [{self.name}]: {msg}")
+            if storage.log_mode == 2 or storage.log_mode == 3:
+                log_file.write(f"[{lib.get_time(storage.log_utc_time)}] [TEST] [{self.name}]: {msg}\n")
+                log_file.flush()
 
     def debug(self, msg: str):
         if storage.log_level >= 4:
-            if self.mode == 1 or self.mode == 3:
-                print(f"[{lib.get_time(storage.log_time)}] [{colored('DEBUG', 'blue')}] [{self.name}]: {msg}")
+            if storage.log_mode == 1 or storage.log_mode == 3:
+                print(f"[{lib.get_time(storage.log_utc_time)}] [{colored('DEBUG', 'blue')}] [{self.name}]: {msg}")
+            if storage.log_mode == 2 or storage.log_mode == 3:
+                log_file.write(f"[{lib.get_time(storage.log_utc_time)}] [DEBUG] [{self.name}]: {msg}\n")
+                log_file.flush()
 
     def info(self, msg: str):
         if storage.log_level >= 3:
-            if self.mode == 1 or self.mode == 3:
-                print(f"[{lib.get_time(storage.log_time)}] [{colored('INFO', 'green')}] [{self.name}]: {msg}")
+            if storage.log_mode == 1 or storage.log_mode == 3:
+                print(f"[{lib.get_time(storage.log_utc_time)}] [{colored('INFO', 'green')}] [{self.name}]: {msg}")
+            if storage.log_mode == 2 or storage.log_mode == 3:
+                log_file.write(f"[{lib.get_time(storage.log_utc_time)}] [INFO] [{self.name}]: {msg}\n")
+                log_file.flush()
 
     def warn(self, msg: str):
         if storage.log_level >= 2:
-            if self.mode == 1 or self.mode == 3:
-                print(f"[{lib.get_time(storage.log_time)}] [{colored('WARN', 'yellow')}] [{self.name}]: {msg}")
+            if storage.log_mode == 1 or storage.log_mode == 3:
+                print(f"[{lib.get_time(storage.log_utc_time)}] [{colored('WARN', 'yellow')}] [{self.name}]: {msg}")
+            if storage.log_mode == 2 or storage.log_mode == 3:
+                log_file.write(f"[{lib.get_time(storage.log_utc_time)}] [WARN] [{self.name}]: {msg}\n")
+                log_file.flush()
 
     def error(self, msg: str):
         if storage.log_level >= 1:
-            if self.mode == 1 or self.mode == 3:
-                print(f"[{lib.get_time(storage.log_time)}] [{colored('ERROR', 'red')}] [{self.name}]: {msg}")
+            if storage.log_mode == 1 or storage.log_mode == 3:
+                print(f"[{lib.get_time(storage.log_utc_time)}] [{colored('ERROR', 'red')}] [{self.name}]: {msg}")
+            if storage.log_mode == 2 or storage.log_mode == 3:
+                log_file.write(f"[{lib.get_time(storage.log_utc_time)}] [ERROR] [{self.name}]: {msg}\n")
+                log_file.flush()
 
-    def fatal(self, e: Exception):
+    def fatal(self, e: Exception, _from: Exception = None):
         if storage.log_level >= 0:
-            if self.mode == 1 or self.mode == 3:
-                print(colored(f"[{lib.get_time(storage.log_time)}] [FATAL] [{self.name}]: {e.__str__()}", 'red',
-                              attrs=['reverse']) + "\n\n")
-            raise e
+            if storage.log_mode == 1 or storage.log_mode == 3:
+                print(colored(
+                    f"[{lib.get_time(storage.log_utc_time)}] [FATAL] [{self.name}]:   "
+                    f"{e.__class__.__name__}: {e.__str__()}", 'red', attrs=['reverse']
+                ))
+            if storage.log_mode == 2 or storage.log_mode == 3:
+                log_file.write(f"[{lib.get_time(storage.log_utc_time)}] [FATAL] [{self.name}]:   "
+                               f"{e.__class__.__name__}: {e.__str__()}\n")
+                log_file.flush()
+            if _from:
+                raise e from _from
+            else:
+                raise e
 
 
 def change_level(level: int):
@@ -81,8 +110,8 @@ def change_mode(mode: int):
 
 def change_time(_global: bool):
     log = Logger('Logger')
-    if storage.log_time == _global:
+    if storage.log_utc_time == _global:
         log.warn('Meaningless time change (changing to the same value)')
     else:
         log.info(f'Time changed to {"UTC" if _global else "local"}')
-        storage.log_time = _global
+        storage.log_utc_time = _global

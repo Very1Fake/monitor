@@ -1,8 +1,9 @@
 collector_tick: 0.1
 collector_wait: 10
 log_level: 5
-log_mode: 0
-log_time: true
+log_mode: 1
+log_utc_time: true
+logs_folder: logs/
 production: false
 target_queue_put_wait: 8
 target_queue_size: 64

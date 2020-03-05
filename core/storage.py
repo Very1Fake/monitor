@@ -2,6 +2,7 @@ from yaml import safe_load
 
 # Main
 production: bool = False  # If True monitor will try to avoid fatal errors as possible
+logs_folder: str = 'logs/'
 
 # Collector
 collector_tick: float = .1  # Delta time for queue manage (in seconds)
@@ -21,8 +22,8 @@ target_queue_put_wait: float = 8
 
 # Logger
 log_level: int = 5  # (5 - Test, 4 - Debug, 3 - Info, 2 - Warn, 1 - Error, 0 - Fatal)
-log_mode: int = 0  # (0 - off, 1 - Console only, 2 - File only, 3 - Console & File)
-log_time: bool = True  # (True - UTC (Coordinated Universal Time), False - local time)
+log_mode: int = 1  # (0 - off, 1 - Console only, 2 - File only, 3 - Console & File)
+log_utc_time: bool = True  # (True - UTC (Coordinated Universal Time), False - local time)
 
 
 def reload_config(config_file: str = 'core/config.yaml') -> None:

@@ -105,11 +105,11 @@ class Collector(threading.Thread):
         for k, v in self.schedule_targets.get_slice_gen(start):  # TODO: Script unload protection
             try:
                 self.task_queue.put(library.PrioritizedItem(100, v), timeout=self.storage['task_queue_put_wait'])
-            except Full:
+            except Full as e:
                 if self.storage['production']:
                     self.log.error(f'Target lost: {v}')
                 else:
-                    self.log.fatal(CollectorError(f'Target lost: {v}'))
+                    self.log.fatal(CollectorError(f'Target lost: {v}'), e)
             ids += (k,)
         self.schedule_targets.pop_item(ids)
 
@@ -166,11 +166,11 @@ class Worker(threading.Thread):
             self.log.debug(f'Result: {status}')
             try:
                 self.target_queue.put(status.target, timeout=self.storage['target_queue_put_wait'])
-            except Full:
+            except Full as e:
                 if self.storage['production']:
                     self.log.error(f'Target lost: {status.target}')
                 else:
-                    self.log.fatal(WorkerError(f'Target lost: {status.target}'))
+                    self.log.fatal(WorkerError(f'Target lost: {status.target}'), e)
         elif isinstance(status, api.StatusSuccess):
             self.log.info(f'Item now available: {status.result}')
         elif isinstance(status, api.StatusFail):
@@ -211,9 +211,11 @@ class Main:
             self.config_file = config_file
         else:
             self.config_file = 'core/config.yaml'
-        self.storage: dict = {'state': 0}
-        self.log: logger.Logger = logger.Logger('Core')
         self.lock: threading.Lock = threading.Lock()
+        self.storage: dict = {'state': 0}
+        self.check_config()
+        self.update_storage()
+        self.log: logger.Logger = logger.Logger('Core')
         self.script_manager: scripts.ScriptManager = scripts.ScriptManager()
         self.task_queue: PriorityQueue = PriorityQueue(storage.task_queue_size)
         self.target_queue: Queue = Queue(storage.target_queue_size)
@@ -251,7 +253,6 @@ class Main:
         return True
 
     def start(self):
-        self.check_config()
         self.turn_on()
 
         collector = Collector(self.script_manager, self.storage, self.task_queue, self.target_queue)
