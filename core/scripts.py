@@ -4,6 +4,7 @@ from hashlib import sha1
 from importlib import import_module
 from platform import python_implementation
 from types import ModuleType
+from typing import Dict
 
 if python_implementation() == 'CPython':
     from _hashlib import HASH as Hash
@@ -87,26 +88,43 @@ class ScriptIndex:
 
 class EventHandler:
     def __init__(self):
-        self.success_execs: dict = {}
-        self.fail_execs: dict = {}
-        self.lost_target_execs: dict = {}
+        self.executors: Dict[str, api.EventsExecutor] = {}
 
-    def execute_success(self) -> None:
-        ...
+    def add(self, name: str, executor: api.EventsExecutor) -> bool:
+        self.executors[name] = executor()
+        return True
 
-    def execute_fail(self) -> None:
-        ...
+    def delete(self, name: str) -> bool:
+        del self.executors[name]
+        return True
 
-    def execute_lost_target(self) -> None:
-        ...
+    def monitor_turning_on(self) -> None:
+        for i in self.executors.values():
+            i.e_monitor_turning_on()
 
-    def delete(self, name: str) -> None:
-        if name in self.success_execs:
-            del self.success_execs[name]
-        if name in self.fail_execs:
-            del self.fail_execs[name]
-        if name in self.lost_target_execs:
-            del self.lost_target_execs[name]
+    def monitor_turned_on(self) -> None:
+        for i in self.executors.values():
+            i.e_monitor_turned_on()
+
+    def monitor_turning_off(self) -> None:
+        for i in self.executors.values():
+            i.e_monitor_turning_off()
+
+    def error(self, message: str, thread: str) -> None:
+        for i in self.executors.values():
+            i.e_error(message, thread)
+
+    def fatal(self, e: Exception, thread: str) -> None:
+        for i in self.executors.values():
+            i.e_fatal(e, thread)
+
+    def success_status(self, status: api.SSuccess) -> None:
+        for i in self.executors.values():
+            i.e_success_status(status)
+
+    def fail_status(self, status: api.SFail) -> None:
+        for i in self.executors.values():
+            i.e_fail_status(status)
 
 
 class ScriptManager:
@@ -146,14 +164,8 @@ class ScriptManager:
         if 'Parser' in module.__dict__ and issubclass(getattr(module, 'Parser'), api.Parser):
             self.parsers[script['name']] = getattr(module, 'Parser')
             success = True
-        if 'SuccessEvent' in module.__dict__ and issubclass(getattr(module, 'SuccessEvent'), api.SuccessEvent):
-            self.event_handler.success_execs[script['name']] = getattr(module, 'SuccessEvent')
-            success = True
-        if 'FailEvent' in module.__dict__ and issubclass(getattr(module, 'FailEvent'), api.FailEvent):
-            self.event_handler.fail_execs[script['name']] = getattr(module, 'FailEvent')
-            success = True
-        if 'LostTargetEvent' in module.__dict__ and issubclass(getattr(module, 'LostTargetEvent'), api.LostTargetEvent):
-            self.event_handler.lost_target_execs[script['name']] = getattr(module, 'LostTargetEvent')
+        if 'EventsExecutor' in module.__dict__ and issubclass(getattr(module, 'EventsExecutor'), api.EventsExecutor):
+            self.event_handler.add(script['name'], getattr(module, 'EventsExecutor'))
             success = True
         self._destroy(module.__name__)
         if success:
@@ -177,22 +189,8 @@ class ScriptManager:
             else:
                 if script['name'] in self.parsers:
                     del self.parsers[script['name']]
-            if 'SuccessEvent' in module.__dict__ and issubclass(getattr(module, 'SuccessEvent'), api.SuccessEvent):
-                self.event_handler.success_execs[script['name']] = getattr(module, 'SuccessEvent')
-            else:
-                if script['name'] in self.event_handler.success_execs:
-                    del self.event_handler.success_execs[script['name']]
-            if 'FailEvent' in module.__dict__ and issubclass(getattr(module, 'FailEvent'), api.FailEvent):
-                self.event_handler.fail_execs[script['name']] = getattr(module, 'FailEvent')
-            else:
-                if script['name'] in self.event_handler.fail_execs:
-                    del self.event_handler.fail_execs[script['name']]
-            if 'LostTargetEvent' in module.__dict__ and issubclass(getattr(module, 'LostTargetEvent'),
-                                                                   api.LostTargetEvent):
-                self.event_handler.lost_target_execs[script['name']] = getattr(module, 'LostTargetEvent')
-            else:
-                if script['name'] in self.event_handler.lost_target_execs:
-                    del self.event_handler.lost_target_execs[script['name']]
+            if 'EventsExecutor' in module.__dict__ and issubclass(getattr(module, 'EventsExecutor'), api.EventsExecutor):
+                self.event_handler.add(script['name'], getattr(module, 'EventsExecutor'))
             self._destroy(module.__name__)
         else:
             self.log.warn(f'"{name} not indexed but still loaded"')

@@ -11,17 +11,19 @@ from typing import Tuple, TypeVar, List, Any
 
 PriceType = TypeVar('PriceType', float, Tuple[float, float])
 SizeType = TypeVar('SizeType', Tuple, Tuple[str], Tuple[str, str])
+FooterType = TypeVar('FooterType', Tuple, Tuple[str, str])
 
 
 @dataclass
 class Result:
-    __slots__ = ('name', 'url', 'image', 'description', 'price', 'sizes')
+    __slots__ = ('name', 'url', 'image', 'description', 'price', 'sizes', 'footer')
     name: str
     url: str
     image: str
     description: str
     price: PriceType
     sizes: SizeType
+    footer: FooterType
 
 
 # Indexing
@@ -35,13 +37,13 @@ IndexType = TypeVar('IndexType', bound=Index)
 
 
 @dataclass
-class IndexOnce(Index):
+class IOnce(Index):
     __slots__ = ('script',)
     script: str
 
 
 @dataclass
-class IndexInterval(Index):
+class IInterval(Index):
     __slots__ = ('script', 'interval')
     script: str
     interval: float
@@ -50,17 +52,17 @@ class IndexInterval(Index):
 # Target classes
 
 
+@dataclass
 class Target(ABC):
-    pass
+    script: str
 
 
 TargetType = TypeVar('TargetType', bound=Target)
 
 
 @dataclass
-class IntervalTarget(Target):
+class TInterval(Target):
     __slots__ = ('script', 'data', 'interval', 'name')
-    script: str
     data: Any
     interval: float
     name: str
@@ -78,28 +80,20 @@ class IntervalTarget(Target):
 
 
 @dataclass
-class ScheduledTarget(Target):  # DON'T USE
+class TScheduled(Target):  # DON'T USE
     __slots__ = ('script', 'data', 'timestamp', 'name')
-    script: str
     data: Any
     timestamp: float
     name: str
 
 
 @dataclass
-class CompletedTarget(Target):
-    pass
-
-
-@dataclass
-class LostTarget(Target):
-    message: str = ''
-
-    def hash(self) -> int:
-        return int(sha1(self.message).hexdigest(), 16)
-
-    def __hash__(self) -> int:
-        return hash(self.hash())
+class TSmart(Target):  # DON'T USE
+    __slots__ = ('script', 'data', 'accuracy', 'timestamp', 'name')
+    data: Any
+    accuracy: int
+    timestamp: float
+    name: str
 
 
 # Status classes
@@ -113,18 +107,23 @@ StatusType = TypeVar('StatusType', bound=Status)
 
 
 @dataclass
-class StatusSuccess(Status):
+class SSuccess(Status):
+    __slots__ = ('script', 'result')
+    script: str
     result: Result
 
 
 @dataclass
-class StatusWaiting(Status):
+class SWaiting(Status):
+    __slots__ = ('target',)
     target: TargetType
 
 
 @dataclass
-class StatusFail(Status):
-    message: str = ''
+class SFail(Status):
+    __slots__ = ('script', 'message')
+    script: str
+    message: str
 
 
 # Parser classes
@@ -144,21 +143,17 @@ class Parser(ABC):  # Class to implement parsers
 # Event classes
 
 
-class SuccessEvent(ABC):  # Class to implement success event (after success parsing)
-    @abstractmethod
-    def execute(self) -> None: ...
+class EventsExecutor(ABC):
+    def e_monitor_turning_on(self) -> None: ...
 
+    def e_monitor_turned_on(self) -> None: ...
 
-class FailEvent(ABC):  # Class to implement fail event (after unsuccessful parsing)
-    @abstractmethod
-    def execute(self) -> None: ...
+    def e_monitor_turning_off(self) -> None: ...
 
+    def e_error(self, message: str, thread: str) -> None: ...
 
-class CompletedTargetEvent(ABC):
-    @abstractmethod
-    def execute(self) -> None: ...
+    def e_fatal(self, e: Exception, thread: str) -> None: ...
 
+    def e_success_status(self, status: SSuccess) -> None: ...
 
-class LostTargetEvent(ABC):  # Class to implement lost target event
-    @abstractmethod
-    def execute(self) -> None: ...
+    def e_fail_status(self, status: SFail) -> None: ...

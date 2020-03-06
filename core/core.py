@@ -13,9 +13,6 @@ from . import scripts
 from . import storage
 
 
-# TODO: FIX target_done in queue
-
-
 class MonitorError(Exception):
     pass
 
@@ -46,12 +43,20 @@ class Collector(threading.Thread):
         self.schedule_indices: library.Schedule = library.Schedule()
         self.schedule_targets: library.UniqueSchedule = library.UniqueSchedule(self.storage['targets_hashes_size'])
 
+    def throw(self, message) -> None:
+        if storage.production:
+            if self.log.error(message):
+                self.script_manager.event_handler.error(message, self.name)
+        else:
+            self.script_manager.event_handler.fatal(CollectorError(message), self.name)
+            self.log.fatal(CollectorError(message))
+
     def reset_index(self):
         self.schedule_indices.clear()
         for i in self.script_manager.parsers:
             parser = self.script_manager.parsers[i]()
             index = parser.index()
-            if isinstance(index, api.IndexInterval):
+            if isinstance(index, api.IInterval):
                 self.schedule_indices[time()] = index
             else:
                 if self.storage['production']:
@@ -60,7 +65,7 @@ class Collector(threading.Thread):
                     self.log.fatal(CollectorError(f'Unknown index while resetting index "{i}"'))
 
     def insert_index(self, index: api.IndexType):
-        if isinstance(index, api.IndexInterval):
+        if isinstance(index, api.IInterval):
             self.schedule_indices[time() + index.interval] = index
         else:
             if self.storage['production']:
@@ -81,7 +86,7 @@ class Collector(threading.Thread):
                     self.log.error(f'Wrong target list received from "{v.script}"')
                 else:
                     self.log.fatal(CollectorError(f'Wrong target list received from "{v.script}"'))
-            if isinstance(v, api.IndexInterval):
+            if isinstance(v, api.IInterval):
                 to_insert += (v,)
                 to_delete += (k,)
         for i in to_insert:
@@ -90,15 +95,11 @@ class Collector(threading.Thread):
 
     def insert_targets(self, targets: Tuple[api.TargetType]):
         for i in targets:
-            if isinstance(i, api.IntervalTarget):
+            if isinstance(i, api.TInterval):
                 try:
                     self.schedule_targets[time() + i.interval] = i
                 except ValueError:
                     pass
-            elif isinstance(i, api.CompletedTarget):
-                pass  # TODO: CompletedTargetEvent
-            elif isinstance(i, api.LostTarget):
-                pass  # TODO: LostTarget
 
     def send_tasks(self, start: float):
         ids: Tuple[float] = ()
@@ -114,8 +115,7 @@ class Collector(threading.Thread):
         self.schedule_targets.pop_item(ids)
 
     def run(self) -> None:
-        parsers_hash: str = self.script_manager.hash()
-        self.script_manager.load_all()
+        parsers_hash: str = ''
         while True:
             start: float = time()
             if self.storage['state'] == 1:
@@ -159,10 +159,18 @@ class Worker(threading.Thread):
         self.task_queue: PriorityQueue = task_queue
         self.target_queue: Queue = target_queue
 
+    def throw(self, message) -> None:
+        if storage.production:
+            if self.log.error(message):
+                self.script_manager.event_handler.error(message, self.name)
+        else:
+            self.script_manager.event_handler.fatal(WorkerError(message), self.name)
+            self.log.fatal(WorkerError(message))
+
     def execute(self, target: api.TargetType) -> bool:
         self.log.debug(f'Executing: {target}')
         status: api.StatusType = self.script_manager.parsers[target.script]().execute(target.data)
-        if isinstance(status, api.StatusWaiting):
+        if isinstance(status, api.SWaiting):
             self.log.debug(f'Result: {status}')
             try:
                 self.target_queue.put(status.target, timeout=self.storage['target_queue_put_wait'])
@@ -171,10 +179,12 @@ class Worker(threading.Thread):
                     self.log.error(f'Target lost: {status.target}')
                 else:
                     self.log.fatal(WorkerError(f'Target lost: {status.target}'), e)
-        elif isinstance(status, api.StatusSuccess):
+        elif isinstance(status, api.SSuccess):
             self.log.info(f'Item now available: {status.result}')
-        elif isinstance(status, api.StatusFail):
+            self.script_manager.event_handler.success_status(status)
+        elif isinstance(status, api.SFail):
             self.log.warn(f'Target lost: {status}')  # TODO: LostTargetEvent here
+            self.script_manager.event_handler.fail_status(status)
             return False
         else:
             self.log.debug(f'Result: {status}')
@@ -186,7 +196,6 @@ class Worker(threading.Thread):
         return True
 
     def run(self) -> None:
-        i = 0
         while True:
             start: float = time()
             if self.storage['state'] == 1:
@@ -197,7 +206,6 @@ class Worker(threading.Thread):
                     pass
                 if target:
                     self.execute(target.content)
-                i += 1
             elif self.storage['state'] == 3:
                 self.log.info('Closing thread')
                 break
@@ -246,9 +254,12 @@ class Main:
 
     def turn_off(self) -> bool:
         self.update_storage(state=3)
+        self.script_manager.event_handler.monitor_turning_off()
         return True
 
     def turn_on(self) -> bool:
+        self.script_manager.load_all()
+        self.script_manager.event_handler.monitor_turning_on()
         self.update_storage(state=1)
         return True
 
@@ -261,9 +272,12 @@ class Main:
         collector.start()
         worker.start()
 
+        self.script_manager.event_handler.monitor_turned_on()
+
         try:
-            collector.join()
-            self.log.fatal(MonitorError('Collector unexpected has turned off'))
+            while collector.is_alive():
+                sleep(1)
+            self.log.fatal(MonitorError('Collector unexpectedly has turned off'))
         except KeyboardInterrupt:
             self.log.info('Signal Interrupt!')
         finally:
