@@ -2,7 +2,7 @@ import os
 import threading
 from queue import Queue, PriorityQueue, Empty, Full
 from time import sleep, time
-from typing import Tuple
+from typing import Tuple, List
 
 import yaml
 
@@ -146,12 +146,14 @@ class Collector(threading.Thread):
 class Worker(threading.Thread):
     def __init__(
             self,
+            id: int,
             script_manager: scripts.ScriptManager,
             storage: dict,
             task_queue: PriorityQueue,
             target_queue: Queue,
     ):
-        super().__init__(name='Worker', daemon=True)
+        super().__init__(name=f'Worker-{id}', daemon=True)
+        self.id = id
         self.log: logger.Logger = logger.Logger(self.name)
         self.lock: threading.Lock = threading.Lock()
         self.script_manager: scripts.ScriptManager = script_manager
@@ -183,7 +185,7 @@ class Worker(threading.Thread):
             self.log.info(f'Item now available: {status.result}')
             self.script_manager.event_handler.success_status(status)
         elif isinstance(status, api.SFail):
-            self.log.warn(f'Target lost: {status}')  # TODO: LostTargetEvent here
+            self.log.warn(f'Target lost: {status}')
             self.script_manager.event_handler.fail_status(status)
             return False
         else:
@@ -227,6 +229,9 @@ class Main:
         self.script_manager: scripts.ScriptManager = scripts.ScriptManager()
         self.task_queue: PriorityQueue = PriorityQueue(storage.task_queue_size)
         self.target_queue: Queue = Queue(storage.target_queue_size)
+        self.collector: Collector = None
+        self.workers_increment: int = 0
+        self.workers: List[Worker] = []
 
     def check_config(self) -> None:
         if os.path.isfile(self.config_file):
@@ -263,19 +268,37 @@ class Main:
         self.update_storage(state=1)
         return True
 
+    def start_collector(self):
+        self.collector = Collector(self.script_manager, self.storage, self.task_queue, self.target_queue)
+        self.collector.start()
+
+    def get_worker(self, _id: int):
+        for i in self.workers:
+            if i.id == _id:
+                return i
+
+    def add_workers(self, count: int):
+        for i in range(count):
+            self.workers.append(
+                Worker(self.workers_increment, self.script_manager, self.storage, self.task_queue, self.target_queue)
+            )
+            self.get_worker(self.workers_increment).start()
+            self.workers_increment += 1
+
+    def wait_workers(self):
+        for i in self.workers:
+            i.join(self.storage['worker_wait'])
+
     def start(self):
         self.turn_on()
 
-        collector = Collector(self.script_manager, self.storage, self.task_queue, self.target_queue)
-        worker = Worker(self.script_manager, self.storage, self.task_queue, self.target_queue)
-
-        collector.start()
-        worker.start()
+        self.start_collector()
+        self.add_workers(self.storage['workers_count'])
 
         self.script_manager.event_handler.monitor_turned_on()
 
         try:
-            while collector.is_alive():
+            while self.collector.is_alive():
                 sleep(1)
             self.log.fatal(MonitorError('Collector unexpectedly has turned off'))
         except KeyboardInterrupt:
@@ -283,6 +306,6 @@ class Main:
         finally:
             self.log.info('Turning off...')
             self.turn_off()
-            worker.join(self.storage['collector_wait'])
-            collector.join(self.storage['worker_wait'])
+            self.wait_workers()
+            self.collector.join(self.storage['worker_wait'])
             self.log.info('Done')

@@ -10,6 +10,7 @@ collector_wait: float = 10  # Timeout to join() when turning off monitor (in sec
 targets_hashes_size: int = 1024
 
 # Worker
+workers_count: int = 3
 worker_tick: float = 1  # Delta time for worker run loop
 worker_wait: float = 5
 

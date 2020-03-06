@@ -13,3 +13,4 @@ task_queue_put_wait: 8
 task_queue_size: 64
 worker_tick: 1
 worker_wait: 5
+workers_count: 3

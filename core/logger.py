@@ -5,7 +5,6 @@ from termcolor import colored
 from . import library as lib
 from . import storage
 
-
 if not os.path.isdir(storage.logs_folder):
     os.makedirs(storage.logs_folder)
 log_file = open(f'{storage.logs_folder}{lib.get_time(storage.log_utc_time)}.log', 'w+')  # TODO: Fix here

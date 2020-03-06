@@ -189,7 +189,8 @@ class ScriptManager:
             else:
                 if script['name'] in self.parsers:
                     del self.parsers[script['name']]
-            if 'EventsExecutor' in module.__dict__ and issubclass(getattr(module, 'EventsExecutor'), api.EventsExecutor):
+            if 'EventsExecutor' in module.__dict__ and \
+                    issubclass(getattr(module, 'EventsExecutor'), api.EventsExecutor):
                 self.event_handler.add(script['name'], getattr(module, 'EventsExecutor'))
             self._destroy(module.__name__)
         else:
