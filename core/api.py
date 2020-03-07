@@ -54,7 +54,14 @@ class IInterval(Index):
 
 @dataclass
 class Target(ABC):
+    name: str
     script: str
+    data: Any
+
+    def content_hash(self) -> int:
+        return int(sha1(
+            self.script.encode() + self.data.__repr__().encode() + self.name.encode()
+        ).hexdigest(), 16)
 
 
 TargetType = TypeVar('TargetType', bound=Target)
@@ -63,17 +70,12 @@ TargetType = TypeVar('TargetType', bound=Target)
 @dataclass
 class TInterval(Target):
     __slots__ = ('script', 'data', 'interval', 'name')
-    data: Any
     interval: float
-    name: str
 
     def hash(self) -> int:
-        try:
-            return int(sha1(
-                self.script.encode() + str(hash(self.data)).encode() + str(self.interval).encode() + self.name.encode()
-            ).hexdigest(), 16)
-        except TypeError:
-            return int(sha1(self.script.encode() + str(self.interval).encode() + self.name.encode()).hexdigest(), 16)
+        return int(sha1(
+            self.script.encode() + self.data.__repr__().encode() + str(self.interval).encode() + self.name.encode()
+        ).hexdigest(), 16)
 
     def __hash__(self) -> int:
         return hash(self.hash())
@@ -82,7 +84,6 @@ class TInterval(Target):
 @dataclass
 class TScheduled(Target):  # DON'T USE
     __slots__ = ('script', 'data', 'timestamp', 'name')
-    data: Any
     timestamp: float
     name: str
 
@@ -90,10 +91,8 @@ class TScheduled(Target):  # DON'T USE
 @dataclass
 class TSmart(Target):  # DON'T USE
     __slots__ = ('script', 'data', 'accuracy', 'timestamp', 'name')
-    data: Any
     accuracy: int
     timestamp: float
-    name: str
 
 
 # Status classes
@@ -137,7 +136,7 @@ class Parser(ABC):  # Class to implement parsers
     def targets(self) -> List[TargetType]: ...  # TODO: Fix this annotation
 
     @abstractmethod
-    def execute(self, data: Any) -> StatusType: ...
+    def execute(self, target: TargetType) -> StatusType: ...
 
 
 # Event classes

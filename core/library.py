@@ -15,35 +15,39 @@ class PrioritizedItem:
 
 
 class Schedule(dict):
-    def __setitem__(self, key: float, value):
-        if isinstance(key, float) or isinstance(key, int):
-            super().__setitem__(round(key, 5), value)
+    def __setitem__(self, time: float, value):
+        if isinstance(time, float) or isinstance(time, int):
+            super().__setitem__(round(time, 5), value)
         else:
             raise KeyError('Key must be int or float')
 
-    def get_slice(self, key) -> List[Tuple[float, Any]]:
-        return [i for i in self.items() if i[0] <= key]
+    def get_slice(self, time) -> List[Tuple[float, Any]]:
+        return [i for i in self.items() if i[0] <= time]
 
-    def get_slice_gen(self, key) -> Generator[Tuple[float, Any], Any, None]:
-        return (i for i in self.items() if i[0] <= key)
+    def get_slice_gen(self, time) -> Generator[Tuple[float, Any], Any, None]:
+        return (i for i in self.items() if i[0] <= time)
 
-    def pop_slice(self, key) -> List[Tuple[str, dict]]:
-        result: List[Tuple[str, dict]] = [i for i in super().items() if i[0] <= key]
+    def pop_slice(self, time) -> List[Tuple[str, dict]]:
+        result: List[Tuple[str, dict]] = [i for i in super().items() if i[0] <= time]
         for i in result:
             self.__delitem__(i[0])
         return result
 
-    def pop_item(self, key) -> None:
-        if isinstance(key, float) or isinstance(key, float):
-            self.__delitem__(key)
-        elif isinstance(key, tuple) or isinstance(key, list):
-            for i in key:
+    def pop_item(self, time) -> None:
+        if isinstance(time, float) or isinstance(time, float):
+            self.__delitem__(time)
+        elif isinstance(time, tuple) or isinstance(time, list):
+            for i in time:
                 if isinstance(i, float) or isinstance(i, int):
                     self.__delitem__(i)
                 else:
                     continue
         else:
             raise ValueError('Item must be float or tuple[float]')
+
+    def del_slice(self, time) -> None:
+        for i in tuple(k for k in super().__iter__() if k <= time):
+            self.__delitem__(i)
 
 
 class UniqueSchedule(Schedule):

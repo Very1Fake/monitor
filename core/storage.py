@@ -2,12 +2,14 @@ from yaml import safe_load
 
 # Main
 production: bool = False  # If True monitor will try to avoid fatal errors as possible
-logs_folder: str = 'logs/'
+logs_folder: str = 'logs'
+cache_folder: str = '.cache'
 
 # Collector
 collector_tick: float = .1  # Delta time for queue manage (in seconds)
 collector_wait: float = 10  # Timeout to join() when turning off monitor (in seconds)
 targets_hashes_size: int = 1024
+success_hashes_time: int = 172800  # How long save hashes of success targets
 
 # Worker
 workers_count: int = 3
@@ -22,7 +24,7 @@ target_queue_size: int = 64  # Size for target_queue (will be waiting if full)
 target_queue_put_wait: float = 8
 
 # Logger
-log_level: int = 5  # (5 - Test, 4 - Debug, 3 - Info, 2 - Warn, 1 - Error, 0 - Fatal)
+log_level: int = 3  # (5 - Test, 4 - Debug, 3 - Info, 2 - Warn, 1 - Error, 0 - Fatal)
 log_mode: int = 1  # (0 - off, 1 - Console only, 2 - File only, 3 - Console & File)
 log_utc_time: bool = True  # (True - UTC (Coordinated Universal Time), False - local time)
 

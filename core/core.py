@@ -7,10 +7,14 @@ from typing import Tuple, List
 import yaml
 
 from . import api
+from . import cache
 from . import library
 from . import logger
 from . import scripts
 from . import storage
+
+
+# TODO: Store important variables as global
 
 
 class MonitorError(Exception):
@@ -31,7 +35,8 @@ class Collector(threading.Thread):
             script_manager: scripts.ScriptManager,
             storage: dict,
             task_queue: PriorityQueue,
-            target_queue: Queue
+            target_queue: Queue,
+            success_hashes: library.Schedule
     ):
         super().__init__(name='Collector', daemon=True)
         self.log: logger.Logger = logger.Logger(self.name)
@@ -42,6 +47,7 @@ class Collector(threading.Thread):
         self.target_queue: Queue = target_queue
         self.schedule_indices: library.Schedule = library.Schedule()
         self.schedule_targets: library.UniqueSchedule = library.UniqueSchedule(self.storage['targets_hashes_size'])
+        self.success_hashes: library.Schedule = success_hashes
 
     def throw(self, message) -> None:
         if storage.production:
@@ -95,11 +101,13 @@ class Collector(threading.Thread):
 
     def insert_targets(self, targets: Tuple[api.TargetType]):
         for i in targets:
-            if isinstance(i, api.TInterval):
-                try:
-                    self.schedule_targets[time() + i.interval] = i
-                except ValueError:
-                    pass
+            self.success_hashes.del_slice(time())
+            if i.content_hash() not in self.success_hashes.values():
+                if isinstance(i, api.TInterval):
+                    try:
+                        self.schedule_targets[time() + i.interval] = i
+                    except ValueError:
+                        pass
 
     def send_tasks(self, start: float):
         ids: Tuple[float] = ()
@@ -137,7 +145,7 @@ class Collector(threading.Thread):
                 if any(self.schedule_targets.get_slice_gen(start)):
                     self.send_tasks(start)
             elif self.storage['state'] == 3:
-                self.log.info('Closing thread')
+                self.log.info('Thread closed')
                 break
             delta: float = time() - start
             sleep(self.storage['collector_tick'] - delta if self.storage['collector_tick'] - delta >= 0 else 0)
@@ -151,6 +159,7 @@ class Worker(threading.Thread):
             storage: dict,
             task_queue: PriorityQueue,
             target_queue: Queue,
+            success_hashes: library.Schedule
     ):
         super().__init__(name=f'Worker-{id}', daemon=True)
         self.id = id
@@ -160,6 +169,7 @@ class Worker(threading.Thread):
         self.storage: dict = storage
         self.task_queue: PriorityQueue = task_queue
         self.target_queue: Queue = target_queue
+        self.success_hashes: library.Schedule = success_hashes
 
     def throw(self, message) -> None:
         if storage.production:
@@ -171,31 +181,33 @@ class Worker(threading.Thread):
 
     def execute(self, target: api.TargetType) -> bool:
         self.log.debug(f'Executing: {target}')
-        status: api.StatusType = self.script_manager.parsers[target.script]().execute(target.data)
-        if isinstance(status, api.SWaiting):
-            self.log.debug(f'Result: {status}')
-            try:
-                self.target_queue.put(status.target, timeout=self.storage['target_queue_put_wait'])
-            except Full as e:
-                if self.storage['production']:
-                    self.log.error(f'Target lost: {status.target}')
-                else:
-                    self.log.fatal(WorkerError(f'Target lost: {status.target}'), e)
-        elif isinstance(status, api.SSuccess):
-            self.log.info(f'Item now available: {status.result}')
-            self.script_manager.event_handler.success_status(status)
-        elif isinstance(status, api.SFail):
-            self.log.warn(f'Target lost: {status}')
-            self.script_manager.event_handler.fail_status(status)
-            return False
-        else:
-            self.log.debug(f'Result: {status}')
-            if self.storage['production']:
-                self.log.error(f'Unknown status received while executing "{target}"')
+        if target.content_hash() not in self.success_hashes.values():  # TODO: Optimize here
+            status: api.StatusType = self.script_manager.parsers[target.script]().execute(target)
+            if isinstance(status, api.SWaiting):
+                self.log.debug(f'Result: {status}')
+                try:
+                    self.target_queue.put(status.target, timeout=self.storage['target_queue_put_wait'])
+                except Full as e:
+                    if self.storage['production']:
+                        self.log.error(f'Target lost: {status.target}')
+                    else:
+                        self.log.fatal(WorkerError(f'Target lost: {status.target}'), e)
+            elif isinstance(status, api.SSuccess):
+                self.log.info(f'Item now available: {status.result}')
+                self.success_hashes[time() + self.storage['success_hashes_time']] = target.content_hash()
+                self.script_manager.event_handler.success_status(status)
+            elif isinstance(status, api.SFail):
+                self.log.warn(f'Target lost: {status}')
+                self.script_manager.event_handler.fail_status(status)
+                return False
             else:
-                self.log.fatal(CollectorError(f'Unknown status received while executing "{target}"'))
+                self.log.debug(f'Result: {status}')
+                if self.storage['production']:
+                    self.log.error(f'Unknown status received while executing "{target}"')
+                else:
+                    self.log.fatal(CollectorError(f'Unknown status received while executing "{target}"'))
+                return True
             return True
-        return True
 
     def run(self) -> None:
         while True:
@@ -209,7 +221,7 @@ class Worker(threading.Thread):
                 if target:
                     self.execute(target.content)
             elif self.storage['state'] == 3:
-                self.log.info('Closing thread')
+                self.log.info('Thread closed')
                 break
             delta: float = time() - start
             sleep(self.storage['worker_tick'] - delta if self.storage['worker_tick'] - delta >= 0 else 0)
@@ -229,7 +241,14 @@ class Main:
         self.script_manager: scripts.ScriptManager = scripts.ScriptManager()
         self.task_queue: PriorityQueue = PriorityQueue(storage.task_queue_size)
         self.target_queue: Queue = Queue(storage.target_queue_size)
-        self.collector: Collector = None
+        self.success_hashes: library.Schedule = library.Schedule()
+        self.collector: Collector = Collector(
+            self.script_manager,
+            self.storage,
+            self.task_queue,
+            self.target_queue,
+            self.success_hashes
+        )
         self.workers_increment: int = 0
         self.workers: List[Worker] = []
 
@@ -268,10 +287,6 @@ class Main:
         self.update_storage(state=1)
         return True
 
-    def start_collector(self):
-        self.collector = Collector(self.script_manager, self.storage, self.task_queue, self.target_queue)
-        self.collector.start()
-
     def get_worker(self, _id: int):
         for i in self.workers:
             if i.id == _id:
@@ -279,9 +294,14 @@ class Main:
 
     def add_workers(self, count: int):
         for i in range(count):
-            self.workers.append(
-                Worker(self.workers_increment, self.script_manager, self.storage, self.task_queue, self.target_queue)
-            )
+            self.workers.append(Worker(
+                self.workers_increment,
+                self.script_manager,
+                self.storage,
+                self.task_queue,
+                self.target_queue,
+                self.success_hashes
+            ))
             self.get_worker(self.workers_increment).start()
             self.workers_increment += 1
 
@@ -292,7 +312,9 @@ class Main:
     def start(self):
         self.turn_on()
 
-        self.start_collector()
+        self.success_hashes.update(cache.load_success_hashes())
+
+        self.collector.start()
         self.add_workers(self.storage['workers_count'])
 
         self.script_manager.event_handler.monitor_turned_on()
@@ -307,5 +329,8 @@ class Main:
             self.log.info('Turning off...')
             self.turn_off()
             self.wait_workers()
-            self.collector.join(self.storage['worker_wait'])
+            self.collector.join(self.storage['collector_wait'])
+            self.log.info('Saving success hashes')
+            cache.dump_success_hashes(self.success_hashes)
+            self.log.info('Saving success hashes complete')
             self.log.info('Done')
