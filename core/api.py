@@ -6,6 +6,21 @@ from typing import Tuple, TypeVar, List, Any
 # TODO: Logger for Parser
 
 
+# Error classes
+
+
+class ScriptError(Exception):
+    pass
+
+
+class ParserError(Exception):
+    pass
+
+
+class EventsExecutorError(Exception):
+    pass
+
+
 # Result classes
 
 

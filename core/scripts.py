@@ -95,7 +95,8 @@ class EventHandler:
         return True
 
     def delete(self, name: str) -> bool:
-        del self.executors[name]
+        if name in self.executors:
+            del self.executors[name]
         return True
 
     def monitor_turning_on(self) -> None:
@@ -176,7 +177,8 @@ class ScriptManager:
 
     def _unload(self, name: str) -> bool:  # TODO: Optimize
         self.event_handler.delete(name)
-        del self.parsers[name]
+        if name in self.parsers:
+            del self.parsers[name]
         del self.scripts[name]
         return True
 

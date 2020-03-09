@@ -4,6 +4,9 @@ from . import library
 from . import storage
 
 
+# TODO: Compress success hashes
+
+
 def check():
     if not os.path.isdir(storage.cache_folder):
         os.makedirs(storage.cache_folder)

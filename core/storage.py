@@ -1,4 +1,7 @@
-from yaml import safe_load
+from os.path import isfile
+
+from yaml import safe_dump, safe_load
+
 
 # Main
 production: bool = False  # If True monitor will try to avoid fatal errors as possible
@@ -35,4 +38,22 @@ def reload_config(config_file: str = 'core/config.yaml') -> None:
 
 def snapshot() -> dict:
     return {k: v for k, v in globals().items() if
-            not k.startswith('__') and not k.startswith('_') and k not in ('reload_config', 'snapshot', 'safe_load')}
+            not k.startswith('__') and not k.startswith('_') and k not in (
+                'check_config', 'isfile', 'reload_config', 'safe_dump', 'safe_load', 'snapshot'
+            )}
+
+
+def check_config(config_file: str) -> None:
+    if isfile(config_file):
+        cache: dict = safe_load(open(config_file))
+        if isinstance(cache, dict):
+            different = False
+            temp_snapshot: dict = snapshot()
+            for k in temp_snapshot:
+                if k not in cache:
+                    different = True
+                    cache[k] = temp_snapshot[k]
+            if different:
+                safe_dump(cache, open(config_file, 'w+'))
+            return
+    safe_dump(snapshot(), open(config_file, 'w+'))
