@@ -12,11 +12,11 @@ def check():
         os.makedirs(storage.cache_folder)
 
 
-def load_success_hashes() -> library.Schedule:
+def load_success_hashes(force: bool = True) -> library.Schedule:
     check()
     hashes: library.Schedule = library.Schedule()
     if os.path.isfile(storage.cache_folder + '/success_hashes.cache'):
-        with open(storage.cache_folder + '/success_hashes.cache', 'r') as file:
+        with open(storage.cache_folder + '/success_hashes.cache', 'r+') as file:
             for i in file.readlines():
                 j = i.split(':')
                 try:
@@ -24,6 +24,9 @@ def load_success_hashes() -> library.Schedule:
                         hashes[float(j[0])] = int(j[1][:-1], 16)
                 except ValueError:
                     continue
+            if force:
+                file.seek(0)
+                file.truncate()
     return hashes
 
 

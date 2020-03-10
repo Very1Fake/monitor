@@ -11,13 +11,16 @@ from . import scripts
 from . import storage
 
 
+# TODO: Success hashes object
+
+
 config_file = 'core/config.yaml'
-lock: threading.Lock = threading.Lock()
 config: dict = {'state': 0}
+lock: threading.Lock = threading.Lock()
 script_manager: scripts.ScriptManager = scripts.ScriptManager()
-task_queue: PriorityQueue = PriorityQueue(storage.task_queue_size)
-target_queue: Queue = Queue(storage.target_queue_size)
 success_hashes: library.Schedule = library.Schedule()
+task_queue: PriorityQueue = None
+target_queue: Queue = None
 
 
 def refresh(**kwargs) -> None:
@@ -255,8 +258,17 @@ class Main:
         for i in self.workers:
             i.join(config['worker_wait'])
 
+    @staticmethod
+    def init_globals():
+        global task_queue
+        global target_queue
+        task_queue = PriorityQueue(storage.task_queue_size)
+        target_queue = Queue(storage.target_queue_size)
+
     def start(self):
         self.turn_on()
+
+        self.init_globals()
 
         self.collector.start()
         self.add_workers(config['workers_count'])
