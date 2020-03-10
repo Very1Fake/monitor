@@ -5,6 +5,7 @@ from . import storage
 
 
 # TODO: Compress success hashes
+# TODO: Backup
 
 
 def check():

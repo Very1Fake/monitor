@@ -3,7 +3,10 @@ from dataclasses import dataclass
 from hashlib import sha1
 from typing import Tuple, TypeVar, List, Any
 
-# TODO: Logger for Parser
+from .logger import Logger
+
+
+# TODO: Price currency
 
 
 # Error classes
@@ -84,7 +87,7 @@ TargetType = TypeVar('TargetType', bound=Target)
 
 @dataclass
 class TInterval(Target):
-    __slots__ = ('script', 'data', 'interval', 'name')
+    __slots__ = ('name', 'script', 'data', 'interval')
     interval: float
 
     def hash(self) -> int:
@@ -98,14 +101,13 @@ class TInterval(Target):
 
 @dataclass
 class TScheduled(Target):  # DON'T USE
-    __slots__ = ('script', 'data', 'timestamp', 'name')
+    __slots__ = ('name', 'script', 'data', 'timestamp')
     timestamp: float
-    name: str
 
 
 @dataclass
 class TSmart(Target):  # DON'T USE
-    __slots__ = ('script', 'data', 'accuracy', 'timestamp', 'name')
+    __slots__ = ('name', 'script', 'data', 'accuracy', 'timestamp')
     accuracy: int
     timestamp: float
 
@@ -144,6 +146,10 @@ class SFail(Status):
 
 
 class Parser(ABC):  # Class to implement parsers
+    def __init__(self, name: str, log: Logger):
+        self.name = name
+        self.log = log
+
     @abstractmethod
     def index(self) -> IndexType: ...
 
@@ -158,6 +164,10 @@ class Parser(ABC):  # Class to implement parsers
 
 
 class EventsExecutor(ABC):
+    def __init__(self, name: str, log: Logger):
+        self.name = name
+        self.log = log
+
     def e_monitor_turning_on(self) -> None: ...
 
     def e_monitor_turned_on(self) -> None: ...

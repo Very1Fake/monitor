@@ -4,7 +4,7 @@ from hashlib import sha1
 from importlib import import_module
 from platform import python_implementation
 from types import ModuleType
-from typing import Dict
+from typing import Dict, Any, Tuple
 
 if python_implementation() == 'CPython':
     from _hashlib import HASH as Hash
@@ -42,20 +42,42 @@ class ScriptIndex:
     def __repr__(self) -> str:
         return f'ScriptIndex({len(self.index)} script(s) indexed, path="{self.path}")'
 
-    @staticmethod
-    def check_config(file: str) -> bool:
+    def check_config(self, file: str) -> bool:
+        good = True
         config: dict = safe_load(open(file))
         if isinstance(config, dict):
-            if 'name' in config and 'version' in config:
+            if 'name' not in config:
+                self.log.debug('"name" not specified in ' + file)
+                good = False
+            if 'version' not in config:
+                self.log.debug('"version" not specified in ' + file)
+                good = False
+            if 'important' not in config:
+                self.log.debug(f'"important" not specified in ' + file)
+                good = False
+            if good:
                 return True
         return False
 
     @staticmethod
     def get_config(file: str) -> dict:
         raw: dict = safe_load(open(file))
-        config: dict = {'name': raw['name'], 'path': os.path.dirname(file), 'version': raw['version']}
+        config: dict = {
+            'name': raw['name'],
+            'path': os.path.dirname(file),
+            'version': raw['version'],
+            'important': raw['important']
+        }
         if 'description' in raw:
             config['description'] = raw['description']
+        if 'can_be_unloaded' in raw:
+            config['can_be_unloaded'] = raw['can_be_unloaded']
+        else:
+            config['can_be_unloaded'] = True
+        if 'keep' in raw:
+            config['keep'] = raw['keep']
+        else:
+            config['keep'] = False
         config['hash'] = dirhash(os.path.dirname(file), 'sha1')
         return config
 
@@ -88,10 +110,11 @@ class ScriptIndex:
 
 class EventHandler:
     def __init__(self):
+        self.log = Logger('EventHandler')
         self.executors: Dict[str, api.EventsExecutor] = {}
 
     def add(self, name: str, executor: api.EventsExecutor) -> bool:
-        self.executors[name] = executor()
+        self.executors[name] = executor(name, Logger('EventsExecutor/' + name))
         return True
 
     def delete(self, name: str) -> bool:
@@ -99,55 +122,38 @@ class EventHandler:
             del self.executors[name]
         return True
 
-    def monitor_turning_on(self) -> None:
-        for i in self.executors.values():
-            i.e_monitor_turning_on()
+    def exec(self, event: str, args: tuple):
+        for i in self.executors.__iter__():
+            try:
+                getattr(self.executors[i], event)(*args)
+            except Exception as e:
+                if storage.production:
+                    self.log.error(f'{e.__str__()} while executing {event} with "{i}" executor')
+                else:
+                    self.log.fatal(e)
 
-    def monitor_turned_on(self) -> None:
-        for i in self.executors.values():
-            i.e_monitor_turned_on()
+    def monitor_turning_on(self) -> None: self.exec('e_monitor_turning_on', ())
 
-    def monitor_turning_off(self) -> None:
-        for i in self.executors.values():
-            i.e_monitor_turning_off()
+    def monitor_turned_on(self) -> None: self.exec('e_monitor_turned_on', ())
 
-    def error(self, message: str, thread: str) -> None:
-        for i in self.executors.values():
-            i.e_error(message, thread)
+    def monitor_turning_off(self) -> None: self.exec('e_monitor_turning_off', ())
 
-    def fatal(self, e: Exception, thread: str) -> None:
-        for i in self.executors.values():
-            i.e_fatal(e, thread)
+    def error(self, message: str, thread: str) -> None: self.exec('e_error', (message, thread))
 
-    def success_status(self, status: api.SSuccess) -> None:
-        for i in self.executors.values():
-            i.e_success_status(status)
+    def fatal(self, e: Exception, thread: str) -> None: self.exec('e_fatal', (e, thread))
 
-    def fail_status(self, status: api.SFail) -> None:
-        for i in self.executors.values():
-            i.e_fail_status(status)
+    def success_status(self, status: api.SSuccess) -> None: self.exec('e_success_status', (status,))
+
+    def fail_status(self, status: api.SFail) -> None: self.exec('e_fail_status', (status,))
 
 
 class ScriptManager:
     def __init__(self):
         self.log = Logger('ScriptManager')
         self.index: ScriptIndex = ScriptIndex()
-        self.index.reindex()
-        self.scripts: dict = {}  # TODO: optimize
+        self.scripts: dict = {}
         self.parsers: dict = {}
         self.event_handler: EventHandler = EventHandler()
-
-    def get_scripts(self) -> dict:
-        return self.scripts
-
-    def get_parsers(self) -> dict:
-        return self.parsers
-
-    def get_parser(self, name: str):
-        return self.parsers[name]
-
-    def get_index(self) -> ScriptIndex:
-        return self.index
 
     def _destroy(self, name: str) -> bool:  # Memory leak patch
         try:
@@ -157,17 +163,27 @@ class ScriptManager:
             self.log.warn(f'Module "{name}" not loaded')
             return False
 
-    def _import(self, script) -> bool:
-        if isinstance(script, str):
-            script: dict = self.index.get_script(script)
-        success: bool = False
-        module: ModuleType = import_module(script['path'].replace('/', '.'))
+    def _scan(self, script: dict, module: ModuleType) -> bool:
+        success = False
         if 'Parser' in module.__dict__ and issubclass(getattr(module, 'Parser'), api.Parser):
-            self.parsers[script['name']] = getattr(module, 'Parser')
+            if script['keep']:
+                self.parsers[script['name']] = getattr(module, 'Parser')(
+                    script['name'],
+                    Logger('Parser/' + script['name'])
+                )
+            else:
+                self.parsers[script['name']] = getattr(module, 'Parser')
             success = True
         if 'EventsExecutor' in module.__dict__ and issubclass(getattr(module, 'EventsExecutor'), api.EventsExecutor):
             self.event_handler.add(script['name'], getattr(module, 'EventsExecutor'))
             success = True
+        return success
+
+    def _load(self, script) -> bool:
+        if isinstance(script, str):
+            script: dict = self.index.get_script(script)
+        module: ModuleType = import_module(script['path'].replace('/', '.'))
+        success = self._scan(script, module)
         self._destroy(module.__name__)
         if success:
             self.scripts[script['name']] = {k: v for k, v in script.items() if k != 'name'}
@@ -175,30 +191,31 @@ class ScriptManager:
             self.log.warn(f'Nothing to import in "{script["name"]}"')
         return success
 
-    def _unload(self, name: str) -> bool:  # TODO: Optimize
-        self.event_handler.delete(name)
-        if name in self.parsers:
-            del self.parsers[name]
-        del self.scripts[name]
-        return True
+    def _unload(self, name: str) -> bool:
+        if self.scripts[name]['can_be_unloaded']:
+            self.event_handler.delete(name)
+            if name in self.parsers:
+                del self.parsers[name]
+            del self.scripts[name]
+            return True
+        else:
+            self.log.warn(f'{name} can\'t be unloaded (unload)')
+            return False
 
     def _reload(self, name: str) -> bool:
-        script: dict = self.scripts[name]
-        if script:
-            module: ModuleType = import_module(script['path'].replace('/', '.'))
-            if 'Parser' in module.__dict__ and issubclass(getattr(module, 'Parser'), api.Parser):
-                self.parsers[script['name']] = getattr(module, 'Parser')
+        if self.scripts[name]['can_be_unloaded']:
+            script: dict = self.scripts[name]
+            if script:
+                module: ModuleType = import_module(script['path'].replace('/', '.'))
+                self._scan(script, module)
+                self._destroy(module.__name__)
             else:
-                if script['name'] in self.parsers:
-                    del self.parsers[script['name']]
-            if 'EventsExecutor' in module.__dict__ and \
-                    issubclass(getattr(module, 'EventsExecutor'), api.EventsExecutor):
-                self.event_handler.add(script['name'], getattr(module, 'EventsExecutor'))
-            self._destroy(module.__name__)
+                self.log.warn(f'"{name} not indexed but still loaded"')
+                return False
+            return True
         else:
-            self.log.warn(f'"{name} not indexed but still loaded"')
+            self.log.warn(f'{name} can\'t be unloaded (reload)')
             return False
-        return True
 
     def load(self, script: str) -> bool:
         script: dict = self.index.get_script(script)
@@ -207,7 +224,7 @@ class ScriptManager:
             return True
         elif script and script['name'] not in self.scripts:
             try:
-                if self._import(script):
+                if self._load(script):
                     self.log.debug(f'"{script["name"]}" loaded')
                     return True
             except ImportError as e:
@@ -241,7 +258,7 @@ class ScriptManager:
         self.log.info(f'Loading all scripts')
         for i in set().union(self.scripts, [i['name'] for i in self.index.index]):  # TODO: Fix here
             try:
-                if self._import(i):
+                if self._load(i):
                     self.log.debug(f'"{i}" loaded')
             except ImportError as e:
                 if storage.production:
@@ -272,3 +289,18 @@ class ScriptManager:
         for i in [i['hash'] for i in self.scripts.values()]:
             _hash.update(i.encode())
         return _hash.hexdigest()
+
+    def get_parser(self, name: str):
+        if self.scripts[name]['keep']:
+            return self.parsers[name]
+        else:
+            return self.parsers[name](name, Logger(f'parser/{name}'))
+
+    def execute_parser(self, name: str, func: str, args: tuple) -> Tuple[bool, Any]:
+        try:
+            return True, getattr(self.get_parser(name), func)(*args)
+        except Exception as e:
+            if self.scripts[name]['important']:
+                return False, None
+            else:
+                raise e
