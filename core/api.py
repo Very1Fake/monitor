@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from hashlib import sha1
-from typing import Tuple, TypeVar, List, Any
+from typing import Tuple, TypeVar, List, Any, Union, Dict
 
 from .logger import Logger
 
@@ -27,19 +27,28 @@ class EventsExecutorError(Exception):
 # Result classes
 
 
-PriceType = TypeVar('PriceType', float, Tuple[float, float])
+PriceType = TypeVar('PriceType', Tuple[int, Union[float, int]], Tuple[int, Union[float, int], Union[float, int]])
 SizeType = TypeVar('SizeType', Tuple, Tuple[str], Tuple[str, str])
 FooterType = TypeVar('FooterType', Tuple, Tuple[str, str])
+
+currencies = {
+    'ruble': 3,
+    'euro': 2,
+    'dollar': 1,
+    'pound': 0
+}
 
 
 @dataclass
 class Result:
-    __slots__ = ('name', 'url', 'image', 'description', 'price', 'sizes', 'footer')
+    __slots__ = ('name', 'url', 'channel', 'image', 'description', 'price', 'fields', 'sizes', 'footer')
     name: str
     url: str
+    channel: str
     image: str
     description: str
     price: PriceType
+    fields: Dict[str, Union[str, int, float]]
     sizes: SizeType
     footer: FooterType
 

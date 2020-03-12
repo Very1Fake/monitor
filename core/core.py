@@ -70,7 +70,7 @@ class Collector(threading.Thread):
 
     def insert_target(self, target):
         if not isinstance(target, (tuple, list)):
-            target = (target, )
+            target = (target,)
         for i in target:
             if i.content_hash() not in success_hashes.values():
                 if isinstance(i, api.TInterval):
