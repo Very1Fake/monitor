@@ -2,14 +2,13 @@ from os.path import isfile
 
 from yaml import safe_dump, safe_load
 
-
 # Main
 production: bool = False  # If True monitor will try to avoid fatal errors as possible
 logs_folder: str = 'logs'
 cache_folder: str = '.cache'
 
 # Collector
-collector_tick: float = .1  # Delta time for queue manage (in seconds)
+collector_tick: float = .5  # Delta time for queue manage (in seconds)
 collector_wait: float = 10  # Timeout to join() when turning off monitor (in seconds)
 targets_hashes_size: int = 1024
 success_hashes_time: int = 172800  # How long save hashes of success targets
@@ -20,10 +19,10 @@ worker_tick: float = 1  # Delta time for worker run loop
 worker_wait: float = 5
 
 # Queues
-task_queue_size: int = 64  # Size for task_queue (will be waiting if full)
+task_queue_size: int = 256  # Size for task_queue (will be waiting if full)
 task_queue_get_wait: float = 1  # Time for wait for get() (in seconds)
 task_queue_put_wait: float = 8
-target_queue_size: int = 64  # Size for target_queue (will be waiting if full)
+target_queue_size: int = 256  # Size for target_queue (will be waiting if full)
 target_queue_put_wait: float = 8
 
 # Logger

@@ -20,6 +20,7 @@ from .logger import Logger
 
 # TODO: Status codes
 # TODO: Ignore list to ScriptIndex
+# TODO: Core support version for scripts config
 
 
 class ScriptIndexError(Exception):
@@ -108,7 +109,7 @@ class ScriptIndex:
             return {}
 
 
-class EventHandler:
+class EventHandler:  # TODO: unload protection
     def __init__(self):
         self.log = Logger('EventHandler')
         self.executors: Dict[str, api.EventsExecutor] = {}
@@ -132,19 +133,26 @@ class EventHandler:
                 else:
                     self.log.fatal(e)
 
-    def monitor_turning_on(self) -> None: self.exec('e_monitor_turning_on', ())
+    def monitor_turning_on(self) -> None:
+        self.exec('e_monitor_turning_on', ())
 
-    def monitor_turned_on(self) -> None: self.exec('e_monitor_turned_on', ())
+    def monitor_turned_on(self) -> None:
+        self.exec('e_monitor_turned_on', ())
 
-    def monitor_turning_off(self) -> None: self.exec('e_monitor_turning_off', ())
+    def monitor_turning_off(self) -> None:
+        self.exec('e_monitor_turning_off', ())
 
-    def error(self, message: str, thread: str) -> None: self.exec('e_error', (message, thread))
+    def error(self, message: str, thread: str) -> None:
+        self.exec('e_error', (message, thread))
 
-    def fatal(self, e: Exception, thread: str) -> None: self.exec('e_fatal', (e, thread))
+    def fatal(self, e: Exception, thread: str) -> None:
+        self.exec('e_fatal', (e, thread))
 
-    def success_status(self, status: api.SSuccess) -> None: self.exec('e_success_status', (status,))
+    def success_status(self, status: api.SSuccess) -> None:
+        self.exec('e_success_status', (status,))
 
-    def fail_status(self, status: api.SFail) -> None: self.exec('e_fail_status', (status,))
+    def fail_status(self, status: api.SFail) -> None:
+        self.exec('e_fail_status', (status,))
 
 
 class ScriptManager:
@@ -291,14 +299,19 @@ class ScriptManager:
         return _hash.hexdigest()
 
     def get_parser(self, name: str):
-        if self.scripts[name]['keep']:
-            return self.parsers[name]
-        else:
-            return self.parsers[name](name, Logger(f'parser/{name}'))
+        try:
+            if self.scripts[name]['keep']:
+                return self.parsers[name]
+            else:
+                return self.parsers[name](name, Logger(f'parser/{name}'))
+        except KeyError:
+            raise ScriptManagerError(f'Script "{name}" not loaded')
 
     def execute_parser(self, name: str, func: str, args: tuple) -> Tuple[bool, Any]:
         try:
             return True, getattr(self.get_parser(name), func)(*args)
+        except KeyError:
+            raise ScriptManagerError(f'Script "{name}" not loaded')
         except Exception as e:
             if self.scripts[name]['important']:
                 return False, None

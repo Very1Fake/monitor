@@ -1,5 +1,5 @@
 cache_folder: .cache
-collector_tick: 0.1
+collector_tick: 0.5
 collector_wait: 10
 log_level: 3
 log_mode: 1
@@ -8,11 +8,11 @@ logs_folder: logs
 production: no
 success_hashes_time: 172800
 target_queue_put_wait: 8
-target_queue_size: 64
+target_queue_size: 256
 targets_hashes_size: 1024
 task_queue_get_wait: 1
 task_queue_put_wait: 8
-task_queue_size: 64
+task_queue_size: 256
 worker_tick: 1
 worker_wait: 5
 workers_count: 3

@@ -10,12 +10,11 @@ from . import logger
 from . import scripts
 from . import storage
 
-
 # TODO: Success hashes object
 
 
 config_file = 'core/config.yaml'
-config: dict = {'state': 0}
+state: dict = {'mode': 0}
 lock: threading.Lock = threading.Lock()
 script_manager: scripts.ScriptManager = scripts.ScriptManager()
 success_hashes: library.Schedule = library.Schedule()
@@ -26,9 +25,8 @@ target_queue: Queue = None
 def refresh(**kwargs) -> None:
     lock.acquire()
     for k, v in kwargs.items():
-        config[k] = v
+        state[k] = v
     storage.reload_config(config_file)
-    config.update(storage.snapshot())
     success_hashes.update(cache.load_success_hashes())
     lock.release()
 
@@ -49,9 +47,9 @@ class Collector(threading.Thread):
     def __init__(self):
         super().__init__(name='Collector', daemon=True)
         self.log: logger.Logger = logger.Logger(self.name)
-        self.lock: threading.Lock = threading.Lock()
         self.schedule_indices: library.Schedule = library.Schedule()
-        self.schedule_targets: library.UniqueSchedule = library.UniqueSchedule(config['targets_hashes_size'])
+        self.schedule_targets: library.UniqueSchedule = library.UniqueSchedule(storage.targets_hashes_size)
+        self.parsers_hash: str = ''
 
     def throw(self, message) -> None:
         if storage.production:
@@ -61,45 +59,57 @@ class Collector(threading.Thread):
             script_manager.event_handler.fatal(CollectorError(message), self.name)
             self.log.fatal(CollectorError(message))
 
-    def reset_index(self):
-        self.schedule_indices.clear()
-        for i in script_manager.parsers:
-            ok, index = script_manager.execute_parser(i, 'index', ())
-            if ok:
-                if isinstance(index, api.IInterval):
-                    self.schedule_indices[time()] = index
-                else:
-                    if config['production']:
-                        self.log.error(f'Unknown index while resetting index "{i}"')
-                    else:
-                        self.log.fatal(CollectorError(f'Unknown index while resetting index "{i}"'))
-            else:
-                self.log.error(f'Parser execution failed {i}')
-
-    def insert_index(self, index: api.IndexType):
+    def insert_index(self, index: api.IndexType, now: float, force: bool = False) -> None:
         if isinstance(index, api.IInterval):
-            self.schedule_indices[time() + index.interval] = index
+            self.schedule_indices[now + (0 if force else index.interval)] = index
         else:
-            if config['production']:
+            if storage.production:
                 self.log.error(f'Unknown index "{index}"')
             else:
                 self.log.fatal(CollectorError(f'Unknown index "{index}"'))
 
-    def reindex(self, start: float) -> bool:
+    def insert_target(self, target):
+        if not isinstance(target, (tuple, list)):
+            target = (target, )
+        for i in target:
+            if i.content_hash() not in success_hashes.values():
+                if isinstance(i, api.TInterval):
+                    try:
+                        self.schedule_targets[time() + i.interval] = i
+                    except ValueError:
+                        if storage.production:
+                            self.log.warn(f'Target lost while inserting: {i}')
+                        else:
+                            self.log.fatal(CollectorError(f'Target lost while inserting: {i}'))
+                    except IndexError:
+                        self.log.test(f'Inserting non-unique target')
+
+    def step_parsers_check(self) -> None:
+        if script_manager.hash() != self.parsers_hash:
+            self.log.info('Reindexing parsers')
+            for i in script_manager.parsers:
+                ok, index = script_manager.execute_parser(i, 'index', ())
+                if ok:
+                    self.insert_index(index, time(), True)
+                else:
+                    self.log.error(f'Parser execution failed {i}')
+            self.parsers_hash = script_manager.hash()
+            self.log.info('Reindexing parsers complete')
+
+    def step_reindex(self) -> bool:
         try:
-            _id, index = next(self.schedule_indices.get_slice_gen(start))  # TODO: Script unload protection
+            _id, index = next(self.schedule_indices.get_slice_gen(time()))  # TODO: Script unload protection
             ok, targets = script_manager.execute_parser(index.script, 'targets', ())
             if ok:
-                if isinstance(targets, tuple) or isinstance(targets, list):
+                if isinstance(targets, (tuple, list)):
                     self.log.debug(f'{len(targets)} targets received from "{index.script}"')
-                    self.insert_targets(targets)
+                    self.insert_target(targets)
                 else:
-                    if config['production']:
+                    if storage.production:
                         self.log.error(f'Wrong target list received from "{index.script}"')
                     else:
                         self.log.fatal(CollectorError(f'Wrong target list received from "{index.script}"'))
-                if isinstance(index, api.IInterval):
-                    self.insert_index(index)
+                self.insert_index(index, time())
                 self.schedule_indices.pop_item(_id)
                 return True
             else:
@@ -108,55 +118,49 @@ class Collector(threading.Thread):
         except StopIteration:
             return False
 
-    def insert_targets(self, targets: Tuple[api.TargetType]):
-        for i in targets:
-            success_hashes.del_slice(time())
-            if i.content_hash() not in success_hashes.values():
-                if isinstance(i, api.TInterval):
-                    try:
-                        self.schedule_targets[time() + i.interval] = i
-                    except ValueError:
-                        pass
-
-    def send_tasks(self, start: float):
-        ids: Tuple[float] = ()
-        for k, v in self.schedule_targets.get_slice_gen(start):  # TODO: Script unload protection
+    def step_target_queue_check(self) -> None:
+        if not target_queue.empty():
             try:
-                task_queue.put(library.PrioritizedItem(100, v), timeout=config['task_queue_put_wait'])
-            except Full as e:
-                if config['production']:
-                    self.log.error(f'Target lost: {v}')
+                while True:
+                    self.insert_target(target_queue.get_nowait())
+            except Empty:
+                return
+
+    def step_send_tasks(self) -> None:
+        if any(self.schedule_targets.get_slice_gen(time())):
+            ids: Tuple[float] = ()
+            for k, v in self.schedule_targets.get_slice_gen(time()):
+                if v.script in script_manager.scripts and v.script in script_manager.parsers:
+                    try:
+                        if isinstance(v, api.TInterval):
+                            priority = 100
+                        else:
+                            priority = 1000
+                        task_queue.put(library.PrioritizedItem(priority, v), timeout=storage.task_queue_put_wait)
+                    except Full as e:
+                        if storage.production:
+                            self.log.error(f'Target lost in pipeline: {v}')
+                        else:
+                            self.log.fatal(CollectorError(f'Target lost in pipeline: {v}'), e)
+                    ids += (k,)
                 else:
-                    self.log.fatal(CollectorError(f'Target lost: {v}'), e)
-            ids += (k,)
-        self.schedule_targets.pop_item(ids)
+                    self.log.error(f'Target lost in pipeline (script unloaded): {v}')
+            self.schedule_targets.pop_item(ids)
 
     def run(self) -> None:
-        parsers_hash: str = ''
         while True:
             start: float = time()
-            if config['state'] == 1:
-                if script_manager.hash() != parsers_hash:
-                    self.log.info('Reindexing parsers')
-                    self.reset_index()
-                    parsers_hash = script_manager.hash()
-                    self.log.info('Reindexing parsers complete')
-                self.reindex(start)
-                if not target_queue.empty():
-                    targets: Tuple[api.TargetType] = ()
-                    try:
-                        while True:
-                            targets += (target_queue.get_nowait(),)
-                    except Empty:
-                        pass
-                    self.insert_targets(targets)
-                if any(self.schedule_targets.get_slice_gen(start)):
-                    self.send_tasks(start)
-            elif config['state'] == 3:
+            if state['mode'] == 1:
+                success_hashes.del_slice(time())
+                self.step_parsers_check()
+                self.step_reindex()
+                self.step_target_queue_check()
+                self.step_send_tasks()
+            elif state['mode'] == 3:
                 self.log.info('Thread closed')
                 break
             delta: float = time() - start
-            sleep(config['collector_tick'] - delta if config['collector_tick'] - delta >= 0 else 0)
+            sleep(storage.collector_tick - delta if storage.collector_tick - delta >= 0 else 0)
 
 
 class Worker(threading.Thread):
@@ -164,7 +168,6 @@ class Worker(threading.Thread):
         super().__init__(name=f'Worker-{_id}', daemon=True)
         self.id = _id
         self.log: logger.Logger = logger.Logger(self.name)
-        self.lock: threading.Lock = threading.Lock()
 
     def throw(self, message) -> None:
         if storage.production:
@@ -177,53 +180,56 @@ class Worker(threading.Thread):
     def execute(self, target: api.TargetType) -> bool:
         self.log.debug(f'Executing: {target}')
         if target.content_hash() not in success_hashes.values():  # TODO: Optimize here
-            ok, status = script_manager.execute_parser(target.script, 'execute', (target,))
-            if ok:
-                if isinstance(status, api.SWaiting):
-                    self.log.debug(f'Result: {status}')
-                    try:
-                        target_queue.put(status.target, timeout=config['target_queue_put_wait'])
-                    except Full as e:
-                        if config['production']:
-                            self.log.error(f'Target lost: {status.target}')
-                        else:
-                            self.log.fatal(WorkerError(f'Target lost: {status.target}'), e)
-                elif isinstance(status, api.SSuccess):
-                    self.log.info(f'Item now available: {status.result}')
-                    success_hashes[time() + config['success_hashes_time']] = target.content_hash()
-                    script_manager.event_handler.success_status(status)
-                elif isinstance(status, api.SFail):
-                    self.log.warn(f'Target lost: {status}')
-                    script_manager.event_handler.fail_status(status)
-                    return False
-                else:
-                    self.log.debug(f'Result: {status}')
-                    if config['production']:
-                        self.log.error(f'Unknown status received while executing "{target}"')
+            try:
+                ok, status = script_manager.execute_parser(target.script, 'execute', (target,))
+                if ok:
+                    if isinstance(status, api.SWaiting):
+                        self.log.debug(f'Result: {status}')
+                        try:
+                            target_queue.put(status.target, timeout=storage.target_queue_put_wait)
+                        except Full as e:
+                            if storage.production:
+                                self.log.error(f'Target lost in pipeline: {status.target}')
+                            else:
+                                self.log.fatal(WorkerError(f'Target lost in pipeline: {status.target}'), e)
+                    elif isinstance(status, api.SSuccess):
+                        self.log.info(f'Item now available: {status.result}')
+                        success_hashes[time() + storage.success_hashes_time] = target.content_hash()
+                        script_manager.event_handler.success_status(status)
+                    elif isinstance(status, api.SFail):
+                        self.log.warn(f'Target lost: {status}')
+                        script_manager.event_handler.fail_status(status)
+                        return False
                     else:
-                        self.log.fatal(CollectorError(f'Unknown status received while executing "{target}"'))
+                        self.log.debug(f'Result: {status}')
+                        if storage.production:
+                            self.log.error(f'Unknown status received while executing: {target}')
+                        else:
+                            self.log.fatal(CollectorError(f'Unknown status received while executing: {target}'))
+                        return True
                     return True
-                return True
-            else:
-                self.log.error(f'Parser execution failed "{target}"')
-                return False
+                else:
+                    self.log.error(f'Parser execution failed "{target}"')
+                    return False
+            except scripts.ScriptManagerError:
+                self.log.error(f'Target lost in pipeline (script unloaded): {target}')
 
     def run(self) -> None:
         while True:
             start: float = time()
-            if config['state'] == 1:
+            if state['mode'] == 1:
                 target: library.PrioritizedItem = None
                 try:
-                    target = task_queue.get(timeout=config['task_queue_get_wait'])
+                    target = task_queue.get(timeout=storage.task_queue_get_wait)
                 except Empty:
                     pass
                 if target:
                     self.execute(target.content)
-            elif config['state'] == 3:
+            elif state['mode'] == 3:
                 self.log.info('Thread closed')
                 break
             delta: float = time() - start
-            sleep(config['worker_tick'] - delta if config['worker_tick'] - delta >= 0 else 0)
+            sleep(storage.worker_tick - delta if storage.worker_tick - delta >= 0 else 0)
 
 
 class Main:
@@ -238,19 +244,19 @@ class Main:
         self.workers_increment: int = 0
         self.workers: List[Worker] = []
 
-    @staticmethod
-    def turn_off() -> bool:
-        refresh(state=3)
-        script_manager.event_handler.monitor_turning_off()
-        return True
-
     def turn_on(self) -> bool:
         if storage.production:
             self.log.info('Production mode enabled!')
         script_manager.index.reindex()
         script_manager.load_all()
         script_manager.event_handler.monitor_turning_on()
-        refresh(state=1)
+        refresh(mode=1)
+        return True
+
+    @staticmethod
+    def turn_off() -> bool:
+        refresh(mode=3)
+        script_manager.event_handler.monitor_turning_off()
         return True
 
     def get_worker(self, _id: int):
@@ -266,7 +272,7 @@ class Main:
 
     def wait_workers(self):
         for i in self.workers:
-            i.join(config['worker_wait'])
+            i.join(storage.worker_wait)
 
     @staticmethod
     def init_globals():
@@ -281,7 +287,7 @@ class Main:
         self.init_globals()
 
         self.collector.start()
-        self.add_workers(config['workers_count'])
+        self.add_workers(storage.workers_count)
 
         script_manager.event_handler.monitor_turned_on()
 
@@ -295,7 +301,7 @@ class Main:
             self.log.info('Turning off...')
             self.turn_off()
             self.wait_workers()
-            self.collector.join(config['collector_wait'])
+            self.collector.join(storage.collector_wait)
             script_manager.unload_all()
             self.log.info('Saving success hashes')
             cache.dump_success_hashes(success_hashes)

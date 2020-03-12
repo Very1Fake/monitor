@@ -17,7 +17,7 @@ class PrioritizedItem:
 class Schedule(dict):
     def __setitem__(self, time: float, value):
         if isinstance(time, float) or isinstance(time, int):
-            super().__setitem__(round(time, 5), value)
+            super().__setitem__(round(time, 7), value)
         else:
             raise KeyError('Key must be int or float')
 
@@ -34,9 +34,9 @@ class Schedule(dict):
         return result
 
     def pop_item(self, time) -> None:
-        if isinstance(time, float) or isinstance(time, float):
+        if isinstance(time, (float, int)):
             self.__delitem__(time)
-        elif isinstance(time, tuple) or isinstance(time, list):
+        elif isinstance(time, (tuple, list)):
             for i in time:
                 if isinstance(i, float) or isinstance(i, int):
                     self.__delitem__(i)
@@ -59,7 +59,7 @@ class UniqueSchedule(Schedule):
         if not hash(value) in self.hashes:
             self.hashes.append(hash(value))
         else:
-            raise ValueError('Non-unique value')
+            raise IndexError('Non-unique value')
         super().__setitem__(key, value)
 
     def pop_slice(self, key) -> List[Tuple[str, dict]]:
