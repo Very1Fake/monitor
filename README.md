@@ -1,31 +1,34 @@
-# monitor
+# Monitor
 
-Short project description goes here.
-
-## Getting Started
-
-Download links:
-
-SSH clone URL: ssh://git@git.jetbrains.space/sellars/monitor.git
-
-HTTPS clone URL: https://git.jetbrains.space/sellars/monitor.git
+Monitor - universal program for monitoring
 
 
+## Requirements
 
-These instructions will get you a copy of the project up and running on your local machine for development and testing purposes.
+### Minimum System Requirements
+- CPU: Any (x86_64 architecture)
+- CPU Speed: 1.8Hz
+- RAM: 512 MB
+- Free Disk space: 16 MB (HDD)
+- OS: Ubuntu 18.04.4 LTS (64-bit)
+- Python 3.6 (with pip)
 
-## Prerequisites
+### How to use
 
-What things you need to install the software and how to install them.
+Before start, you need to install libraries
 
+``` bash
+sudo pip install -r requirements.txt
+sudo pip install -r scripts/requirements.txt
 ```
-Examples
+
+To start use this command
+
+```bash
+python3 -B -I start.py
 ```
+
 
 ## Deployment
 
-Add additional notes about how to deploy this on a production system.
-
-## Resources
-
-Add links to external resources for this project, such as CI server, bug tracker, etc.
+All deployment scripts will be store in other repository (soon)
