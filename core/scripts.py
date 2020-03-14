@@ -2,17 +2,15 @@ import os
 import sys
 from hashlib import sha1
 from importlib import import_module
-from platform import python_implementation
+from packaging.version import Version, InvalidVersion
 from types import ModuleType
 from typing import Dict, Any, Tuple
 
-if python_implementation() == 'CPython':
-    from _hashlib import HASH as Hash
-else:
-    from _hashlib import Hash as Hash
+from _hashlib import HASH as Hash
 from checksumdir import dirhash
 from yaml import safe_load
 
+from . import version
 from . import api
 from . import storage
 from .logger import Logger
@@ -43,6 +41,37 @@ class ScriptIndex:
     def __repr__(self) -> str:
         return f'ScriptIndex({len(self.index)} script(s) indexed, path="{self.path}")'
 
+    def load_config(self) -> dict:
+        if os.path.isfile(self.path + '/config.yaml'):
+            raw = safe_load(open(self.path + '/config.yaml'))
+            if isinstance(raw, dict):
+                config: dict = {}
+                if 'ignore' in raw and isinstance(raw['ignore'], list):
+                    config['ignore'] = raw['ignore']
+                return config
+            else:
+                self.log.debug('Config doens\'t loaded (must be dict)')
+        return {}
+
+    @staticmethod
+    def check_dependency_version_style(version_: str) -> bool:
+        if version_.startswith(('^', '_', '=')):
+            try:
+                Version(version_[1:])
+                return True
+            except InvalidVersion:
+                return False
+        return False
+
+    @staticmethod
+    def check_dependency_version(version_: str) -> bool:
+        if version_.startswith('=') and Version(version_[1:]) == version or \
+                version_.startswith('^') and Version(version_[1:]) <= version or \
+                version_.startswith('_') and Version(version_[1:]) >= version:
+            return True
+        else:
+            return False
+
     def check_config(self, file: str) -> bool:
         good = True
         config: dict = safe_load(open(file))
@@ -50,12 +79,41 @@ class ScriptIndex:
             if 'name' not in config:
                 self.log.debug('"name" not specified in ' + file)
                 good = False
+            else:
+                if not isinstance(config['name'], str):
+                    self.log.debug('"name" must be str in ' + file)
+                    good = False
+            if 'core' not in config:
+                self.log.debug('"core" not specified in ' + file)
+                good = False
+            else:
+                if not isinstance(config['core'], str):
+                    self.log.debug('"core" must be version(str) in ' + file)
+                    good = False
+                else:
+                    if not self.check_dependency_version_style(config['core']):
+                        self.log.debug('Wrong style of version in "core" in ' + file)
+                        good = False
             if 'version' not in config:
                 self.log.debug('"version" not specified in ' + file)
                 good = False
+            else:
+                if not isinstance(config['version'], str):
+                    self.log.debug('"version" must be version(str) in ' + file)
+                    good = False
+                else:
+                    try:
+                        Version(config['version'])
+                    except InvalidVersion:
+                        self.log.debug('Wrong version style of "version" in ' + file)
+                        good = False
             if 'important' not in config:
-                self.log.debug(f'"important" not specified in ' + file)
+                self.log.debug('"important" not specified in ' + file)
                 good = False
+            else:
+                if not isinstance(config['important'], bool):
+                    self.log.debug('"important" must be bool in ' + file)
+                    good = False
             if good:
                 return True
         return False
@@ -66,6 +124,7 @@ class ScriptIndex:
         config: dict = {
             'name': raw['name'],
             'path': os.path.dirname(file),
+            'core': raw['core'],
             'version': raw['version'],
             'important': raw['important']
         }
@@ -83,8 +142,9 @@ class ScriptIndex:
         return config
 
     def reindex(self) -> None:
+        config_: dict = self.load_config()
         folders: list = next(os.walk(self.path))[1]  # Get all script folders
-        names: list = []
+        names: Tuple[str] = ()
         self.index.clear()
         for i in folders:
             file = f'{self.path}/{i}/config.yaml'
@@ -95,10 +155,16 @@ class ScriptIndex:
                 self.log.info(f'Skipping "{i}/" (bad config)')
                 continue
             config: dict = self.get_config(file)  # Get config from config.yaml
+            if not self.check_dependency_version(config['core']):
+                self.log.info(f'Skipping "{i}/" (script incompatible with core)')
+                continue
+            if 'ignore' in config_ and config['name'] in config_['ignore']:
+                self.log.info(f'Skipping "{i}/" (ignored by config)')
+                continue
             if config['name'] in names:
                 self.log.info(f'Skipping "{i}/" (script with this name already indexed)')
                 continue
-            names.append(config['name'])  # Save name to check on uniqueness
+            names += (config['name'],)  # Save name to check on uniqueness
             self.index.append(config)
         self.log.debug(f'{len(self.index)} script(s) indexed')
 
