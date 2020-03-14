@@ -86,9 +86,9 @@ class UniqueSchedule(Schedule):
 time_format: str = "%Y-%m-%d %H:%M:%S"
 
 
-def get_time(_global: bool = True) -> str:
-    if _global:
-        _time = datetime.utcnow()
+def get_time(global_: bool = True) -> str:
+    if global_:
+        time_ = datetime.utcnow()
     else:
-        _time = datetime.now()
-    return datetime.strftime(_time, time_format)
+        time_ = datetime.now()
+    return datetime.strftime(time_, time_format)

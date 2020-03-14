@@ -5,9 +5,10 @@ from termcolor import colored
 from . import library as lib
 from . import storage
 
-if not os.path.isdir(storage.logs_folder):
-    os.makedirs(storage.logs_folder)
-log_file = open(f'{storage.logs_folder}/{lib.get_time(storage.log_utc_time)}.log', 'w+')  # TODO: Fix here
+if storage.log_mode == 2 or storage.log_mode == 3:
+    if not os.path.isdir(storage.logs_folder):
+        os.makedirs(storage.logs_folder)
+    log_file = open(f'{storage.logs_folder}/{lib.get_time(storage.log_utc_time)}.log', 'w+')
 
 
 class LoggerError(Exception):
@@ -68,7 +69,7 @@ class Logger:
             return True
         return False
 
-    def fatal(self, e: Exception, _from: Exception = None):
+    def fatal(self, e: Exception, from_: Exception = None):
         if storage.log_mode == 1 or storage.log_mode == 3:
             print(colored(
                 f"[{lib.get_time(storage.log_utc_time)}] [FATAL] [{self.name}]:   "
@@ -78,8 +79,8 @@ class Logger:
             log_file.write(f"[{lib.get_time(storage.log_utc_time)}] [FATAL] [{self.name}]:   "
                            f"{e.__class__.__name__}: {e.__str__()}\n")
             log_file.flush()
-        if _from:
-            raise e from _from
+        if from_:
+            raise e from from_
         else:
             raise e
 
@@ -114,10 +115,10 @@ def change_mode(mode: int):
             log.fatal(LoggerError('Can\'t change mode (possible values (0, 1, 2, 3))'))
 
 
-def change_time(_global: bool):
+def change_time(global_: bool):
     log = Logger('Logger')
-    if storage.log_utc_time == _global:
+    if storage.log_utc_time == global_:
         log.warn('Meaningless time change (changing to the same value)')
     else:
-        log.info(f'Time changed to {"UTC" if _global else "local"}')
-        storage.log_utc_time = _global
+        log.info(f'Time changed to {"UTC" if global_ else "local"}')
+        storage.log_utc_time = global_

@@ -1,24 +1,22 @@
 import os
 import sys
+from _hashlib import HASH as Hash
 from hashlib import sha1
 from importlib import import_module
-from packaging.version import Version, InvalidVersion
 from types import ModuleType
 from typing import Dict, Any, Tuple
 
-from _hashlib import HASH as Hash
 from checksumdir import dirhash
+from packaging.version import Version, InvalidVersion
 from yaml import safe_load
 
-from . import version
 from . import api
 from . import storage
+from . import version
 from .logger import Logger
 
 
 # TODO: Status codes
-# TODO: Ignore list to ScriptIndex
-# TODO: Core support version for scripts config
 
 
 class ScriptIndexError(Exception):
@@ -359,10 +357,10 @@ class ScriptManager:
         return True
 
     def hash(self) -> str:
-        _hash: Hash = sha1(b'')
+        hash_: Hash = sha1(b'')
         for i in [i['hash'] for i in self.scripts.values()]:
-            _hash.update(i.encode())
-        return _hash.hexdigest()
+            hash_.update(i.encode())
+        return hash_.hexdigest()
 
     def get_parser(self, name: str):
         try:

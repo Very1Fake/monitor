@@ -1,7 +1,7 @@
 cache_folder: .cache
 collector_tick: 0.5
 collector_wait: 10
-log_level: 3
+log_level: 4
 log_mode: 1
 log_utc_time: yes
 logs_folder: logs

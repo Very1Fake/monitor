@@ -2,6 +2,27 @@ from os.path import isfile
 
 from yaml import safe_dump, safe_load
 
+
+def check_config(config_file: str) -> None:
+    if isfile(config_file):
+        cache: dict = safe_load(open(config_file))
+        if isinstance(cache, dict):
+            different = False
+            temp_snapshot: dict = snapshot()
+            for k in temp_snapshot:
+                if k not in cache:
+                    different = True
+                    cache[k] = temp_snapshot[k]
+            if different:
+                safe_dump(cache, open(config_file, 'w+'))
+            return
+    safe_dump(snapshot(), open(config_file, 'w+'))
+
+
+def reload_config(config_file: str = 'core/config.yaml') -> None:
+    globals().update(safe_load(open(config_file)))
+
+
 # Main
 production: bool = False  # If True monitor will try to avoid fatal errors as possible
 logs_folder: str = 'logs'
@@ -31,10 +52,6 @@ log_mode: int = 1  # (0 - off, 1 - Console only, 2 - File only, 3 - Console & Fi
 log_utc_time: bool = True  # (True - UTC (Coordinated Universal Time), False - local time)
 
 
-def reload_config(config_file: str = 'core/config.yaml') -> None:
-    globals().update(safe_load(open(config_file)))
-
-
 def snapshot() -> dict:
     return {k: v for k, v in globals().items() if
             not k.startswith('__') and not k.startswith('_') and k not in (
@@ -42,17 +59,5 @@ def snapshot() -> dict:
             )}
 
 
-def check_config(config_file: str) -> None:
-    if isfile(config_file):
-        cache: dict = safe_load(open(config_file))
-        if isinstance(cache, dict):
-            different = False
-            temp_snapshot: dict = snapshot()
-            for k in temp_snapshot:
-                if k not in cache:
-                    different = True
-                    cache[k] = temp_snapshot[k]
-            if different:
-                safe_dump(cache, open(config_file, 'w+'))
-            return
-    safe_dump(snapshot(), open(config_file, 'w+'))
+if __name__ == 'core.storage':
+    reload_config()

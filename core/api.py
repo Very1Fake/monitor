@@ -6,9 +6,6 @@ from typing import Tuple, TypeVar, List, Any, Union, Dict
 from .logger import Logger
 
 
-# TODO: Price currency
-
-
 # Error classes
 
 

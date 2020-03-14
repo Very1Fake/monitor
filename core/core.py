@@ -18,8 +18,8 @@ state: dict = {'mode': 0}
 lock: threading.Lock = threading.Lock()
 script_manager: scripts.ScriptManager = scripts.ScriptManager()
 success_hashes: library.Schedule = library.Schedule()
-task_queue: PriorityQueue = None
-target_queue: Queue = None
+task_queue: PriorityQueue = PriorityQueue(storage.task_queue_size)
+target_queue: Queue = Queue(storage.target_queue_size)
 
 
 def refresh(**kwargs) -> None:
@@ -98,7 +98,7 @@ class Collector(threading.Thread):
 
     def step_reindex(self) -> bool:
         try:
-            _id, index = next(self.schedule_indices.get_slice_gen(time()))  # TODO: Script unload protection
+            id_, index = next(self.schedule_indices.get_slice_gen(time()))
             ok, targets = script_manager.execute_parser(index.script, 'targets', ())
             if ok:
                 if isinstance(targets, (tuple, list)):
@@ -110,7 +110,7 @@ class Collector(threading.Thread):
                     else:
                         self.log.fatal(CollectorError(f'Wrong target list received from "{index.script}"'))
                 self.insert_index(index, time())
-                self.schedule_indices.pop_item(_id)
+                self.schedule_indices.pop_item(id_)
                 return True
             else:
                 self.log.error(f'Parser execution failed {index.script}')
@@ -164,9 +164,9 @@ class Collector(threading.Thread):
 
 
 class Worker(threading.Thread):
-    def __init__(self, _id: int):
-        super().__init__(name=f'Worker-{_id}', daemon=True)
-        self.id = _id
+    def __init__(self, id_: int):
+        super().__init__(name=f'Worker-{id_}', daemon=True)
+        self.id = id_
         self.log: logger.Logger = logger.Logger(self.name)
 
     def throw(self, message) -> None:
@@ -233,10 +233,10 @@ class Worker(threading.Thread):
 
 
 class Main:
-    def __init__(self, _config_file: str = None):
+    def __init__(self, config_file_: str = None):
         global config_file
-        if _config_file:
-            config_file = _config_file
+        if config_file_:
+            config_file = config_file_
         storage.check_config(config_file)
         refresh()
         self.log: logger.Logger = logger.Logger('Core')
@@ -259,9 +259,9 @@ class Main:
         script_manager.event_handler.monitor_turning_off()
         return True
 
-    def get_worker(self, _id: int):
+    def get_worker(self, id_: int):
         for i in self.workers:
-            if i.id == _id:
+            if i.id == id_:
                 return i
 
     def add_workers(self, count: int):
@@ -274,17 +274,8 @@ class Main:
         for i in self.workers:
             i.join(storage.worker_wait)
 
-    @staticmethod
-    def init_globals():
-        global task_queue
-        global target_queue
-        task_queue = PriorityQueue(storage.task_queue_size)
-        target_queue = Queue(storage.target_queue_size)
-
     def start(self):
         self.turn_on()
-
-        self.init_globals()
 
         self.collector.start()
         self.add_workers(storage.workers_count)
