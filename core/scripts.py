@@ -43,9 +43,16 @@ class ScriptIndex:
         if os.path.isfile(self.path + '/config.yaml'):
             raw = safe_load(open(self.path + '/config.yaml'))
             if isinstance(raw, dict):
-                config: dict = {}
-                if 'ignore' in raw and isinstance(raw['ignore'], list):
-                    config['ignore'] = raw['ignore']
+                config: dict = {'ignore': {}}
+                if 'ignore' in raw and isinstance(raw['ignore'], dict):
+                    if 'folders' in raw['ignore'] and isinstance(raw['ignore']['folders'], list):
+                        config['ignore']['folders'] = raw['ignore']['folders']
+                    else:
+                        config['ignore']['folders'] = []
+                    if 'scripts' in raw['ignore'] and isinstance(raw['ignore']['scripts'], list):
+                        config['ignore']['scripts'] = raw['ignore']['scripts']
+                    else:
+                        config['ignore']['scripts'] = []
                 return config
             else:
                 self.log.debug('Config doens\'t loaded (must be dict)')
@@ -141,7 +148,9 @@ class ScriptIndex:
 
     def reindex(self) -> None:
         config_: dict = self.load_config()
-        folders: list = next(os.walk(self.path))[1]  # Get all script folders
+        folders: tuple = tuple(
+            i for i in next(os.walk(self.path))[1] if i not in config_['ignore']['folders']  # Get all script folders
+        )
         names: Tuple[str] = ()
         self.index.clear()
         for i in folders:
@@ -156,7 +165,7 @@ class ScriptIndex:
             if not self.check_dependency_version(config['core']):
                 self.log.info(f'Skipping "{i}/" (script incompatible with core)')
                 continue
-            if 'ignore' in config_ and config['name'] in config_['ignore']:
+            if 'ignore' in config_ and config['name'] in config_['ignore']['scripts']:
                 self.log.info(f'Skipping "{i}/" (ignored by config)')
                 continue
             if config['name'] in names:
@@ -205,6 +214,9 @@ class EventHandler:  # TODO: unload protection
 
     def monitor_turning_off(self) -> None:
         self.exec('e_monitor_turning_off', ())
+
+    def monitor_turned_off(self) -> None:
+        self.exec('e_monitor_turned_off', ())
 
     def error(self, message: str, thread: str) -> None:
         self.exec('e_error', (message, thread))
