@@ -60,7 +60,10 @@ class Collector(threading.Thread):
             self.log.fatal(CollectorError(message))
 
     def insert_index(self, index: api.IndexType, now: float, force: bool = False) -> None:
-        if isinstance(index, api.IInterval):
+        if isinstance(index, api.IOnce):
+            if force:
+                self.schedule_indices[now] = index
+        elif isinstance(index, api.IInterval):
             self.schedule_indices[now + (0 if force else index.interval)] = index
         else:
             if storage.production:
