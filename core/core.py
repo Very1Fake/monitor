@@ -77,7 +77,13 @@ class Collector(threading.Thread):
         for i in target:
             if i.content_hash() not in success_hashes.values():
                 try:
-                    if isinstance(i, api.TScheduled):
+                    if isinstance(i, api.TSmart):
+                        time_ = library.smart_extractor(library.smart_gen(i.timestamp, i.length, i.scatter), time())
+                        if time_:  # TODO: Fix here (expired must be checked once)
+                            self.schedule_targets[time_] = i
+                        else:
+                            self.log.warn(f'Smart target expired: {i}')
+                    elif isinstance(i, api.TScheduled):
                         self.schedule_targets[i.timestamp] = i
                     elif isinstance(i, api.TInterval):
                         self.schedule_targets[time() + i.interval] = i
@@ -137,7 +143,9 @@ class Collector(threading.Thread):
             for k, v in self.schedule_targets.get_slice_gen(time()):
                 if v.script in script_manager.scripts and v.script in script_manager.parsers:
                     try:
-                        if isinstance(v, api.TScheduled):
+                        if isinstance(v, api.TSmart):
+                            priority = 10
+                        elif isinstance(v, api.TScheduled):
                             priority = 50
                         elif isinstance(v, api.TInterval):
                             priority = 100
