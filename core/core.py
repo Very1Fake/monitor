@@ -76,16 +76,18 @@ class Collector(threading.Thread):
             target = (target,)
         for i in target:
             if i.content_hash() not in success_hashes.values():
-                if isinstance(i, api.TInterval):
-                    try:
+                try:
+                    if isinstance(i, api.TScheduled):
+                        self.schedule_targets[i.timestamp] = i
+                    elif isinstance(i, api.TInterval):
                         self.schedule_targets[time() + i.interval] = i
-                    except ValueError:
-                        if storage.production:
-                            self.log.warn(f'Target lost while inserting: {i}')
-                        else:
-                            self.log.fatal(CollectorError(f'Target lost while inserting: {i}'))
-                    except IndexError:
-                        self.log.test(f'Inserting non-unique target')
+                except ValueError:
+                    if storage.production:
+                        self.log.warn(f'Target lost while inserting: {i}')
+                    else:
+                        self.log.fatal(CollectorError(f'Target lost while inserting: {i}'))
+                except IndexError:
+                    self.log.warn(f'Inserting non-unique target')
 
     def step_parsers_check(self) -> None:
         if script_manager.hash() != self.parsers_hash:
@@ -135,7 +137,9 @@ class Collector(threading.Thread):
             for k, v in self.schedule_targets.get_slice_gen(time()):
                 if v.script in script_manager.scripts and v.script in script_manager.parsers:
                     try:
-                        if isinstance(v, api.TInterval):
+                        if isinstance(v, api.TScheduled):
+                            priority = 50
+                        elif isinstance(v, api.TInterval):
                             priority = 100
                         else:
                             priority = 1000
