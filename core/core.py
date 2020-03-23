@@ -60,7 +60,10 @@ class Collector(threading.Thread):
             self.log.fatal(CollectorError(message))
 
     def insert_index(self, index: api.IndexType, now: float, force: bool = False) -> None:
-        if isinstance(index, api.IInterval):
+        if isinstance(index, api.IOnce):
+            if force:
+                self.schedule_indices[now] = index
+        elif isinstance(index, api.IInterval):
             self.schedule_indices[now + (0 if force else index.interval)] = index
         else:
             if storage.production:
@@ -73,16 +76,24 @@ class Collector(threading.Thread):
             target = (target,)
         for i in target:
             if i.content_hash() not in success_hashes.values():
-                if isinstance(i, api.TInterval):
-                    try:
-                        self.schedule_targets[time() + i.interval] = i
-                    except ValueError:
-                        if storage.production:
-                            self.log.warn(f'Target lost while inserting: {i}')
+                try:
+                    if isinstance(i, api.TSmart):
+                        time_ = library.smart_extractor(library.smart_gen(i.timestamp, i.length, i.scatter), time())
+                        if time_:  # TODO: Fix here (expired must be checked once)
+                            self.schedule_targets[time_] = i
                         else:
-                            self.log.fatal(CollectorError(f'Target lost while inserting: {i}'))
-                    except IndexError:
-                        self.log.test(f'Inserting non-unique target')
+                            self.log.warn(f'Smart target expired: {i}')
+                    elif isinstance(i, api.TScheduled):
+                        self.schedule_targets[i.timestamp] = i
+                    elif isinstance(i, api.TInterval):
+                        self.schedule_targets[time() + i.interval] = i
+                except ValueError:
+                    if storage.production:
+                        self.log.warn(f'Target lost while inserting: {i}')
+                    else:
+                        self.log.fatal(CollectorError(f'Target lost while inserting: {i}'))
+                except IndexError:
+                    self.log.warn(f'Inserting non-unique target')
 
     def step_parsers_check(self) -> None:
         if script_manager.hash() != self.parsers_hash:
@@ -132,7 +143,11 @@ class Collector(threading.Thread):
             for k, v in self.schedule_targets.get_slice_gen(time()):
                 if v.script in script_manager.scripts and v.script in script_manager.parsers:
                     try:
-                        if isinstance(v, api.TInterval):
+                        if isinstance(v, api.TSmart):
+                            priority = 10
+                        elif isinstance(v, api.TScheduled):
+                            priority = 50
+                        elif isinstance(v, api.TInterval):
                             priority = 100
                         else:
                             priority = 1000

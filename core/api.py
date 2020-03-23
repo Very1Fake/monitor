@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from hashlib import sha1
-from typing import Tuple, TypeVar, List, Any, Union, Dict
+from typing import Tuple, TypeVar, List, Any, Union, Dict, Iterator
 
 from .logger import Logger
 
@@ -106,16 +106,34 @@ class TInterval(Target):
 
 
 @dataclass
-class TScheduled(Target):  # DON'T USE
+class TScheduled(Target):
     __slots__ = ('name', 'script', 'data', 'timestamp')
     timestamp: float
 
+    def hash(self) -> int:
+        return int(sha1(
+            self.script.encode() + self.data.__repr__().encode() + str(self.timestamp).encode() + self.name.encode()
+        ).hexdigest(), 16)
+
+    def __hash__(self) -> int:
+        return hash(self.hash())
+
 
 @dataclass
-class TSmart(Target):  # DON'T USE
-    __slots__ = ('name', 'script', 'data', 'accuracy', 'timestamp')
-    accuracy: int
+class TSmart(Target):
+    __slots__ = ('name', 'script', 'data', 'length', 'scatter', 'timestamp')
+    length: int
+    scatter: int
     timestamp: float
+
+    def hash(self) -> int:
+        return int(sha1(
+            self.script.encode() + self.data.__repr__().encode() + str(self.length).encode() +
+            str(self.scatter).encode() + str(self.timestamp).encode() + self.name.encode()
+        ).hexdigest(), 16)
+
+    def __hash__(self) -> int:
+        return hash(self.hash())
 
 
 # Status classes
