@@ -41,7 +41,6 @@ worker_wait: float = 5
 
 # Queues
 task_queue_size: int = 512  # Size for task_queue (will be waiting if full)
-task_queue_get_wait: float = 1  # Time for wait for get() (in seconds)
 task_queue_put_wait: float = 8
 target_queue_size: int = 512  # Size for target_queue (will be waiting if full)
 target_queue_put_wait: float = 8

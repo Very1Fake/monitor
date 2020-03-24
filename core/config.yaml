@@ -10,7 +10,6 @@ success_hashes_time: 172800
 target_queue_put_wait: 8
 target_queue_size: 512
 targets_hashes_size: 1024
-task_queue_get_wait: 1
 task_queue_put_wait: 8
 task_queue_size: 512
 worker_tick: 1

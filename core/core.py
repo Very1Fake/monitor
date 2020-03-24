@@ -235,7 +235,7 @@ class Worker(threading.Thread):
             if state['mode'] == 1:
                 target: library.PrioritizedItem = None
                 try:
-                    target = task_queue.get(timeout=storage.task_queue_get_wait)
+                    target = task_queue.get_nowait()
                 except Empty:
                     pass
                 if target:
