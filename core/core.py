@@ -11,6 +11,7 @@ from . import scripts
 from . import storage
 
 # TODO: Success hashes object
+# TODO: Targets priority to config
 
 
 config_file = 'core/config.yaml'
@@ -147,13 +148,13 @@ class Collector(threading.Thread):
                 if v.script in script_manager.scripts and v.script in script_manager.parsers:
                     try:
                         if isinstance(v, api.TSmart):
-                            priority = 10
+                            priority = 10 + v.reuse(0)
                         elif isinstance(v, api.TScheduled):
-                            priority = 50
+                            priority = 50 + v.reuse(0)
                         elif isinstance(v, api.TInterval):
-                            priority = 100
+                            priority = 100 + v.reuse(900)
                         else:
-                            priority = 1000
+                            priority = 1001
                         task_queue.put(library.PrioritizedItem(priority, v), timeout=storage.task_queue_put_wait)
                     except Full as e:
                         if storage.production:
