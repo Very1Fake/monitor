@@ -26,7 +26,7 @@ def load_success_hashes(force: bool = True) -> library.Schedule:
                     continue
             if force:
                 file.seek(0)
-                file.truncate()
+        os.rename(storage.cache_folder + '/success_hashes.cache', storage.cache_folder + '/success_hashes.cache.old')
     return hashes
 
 

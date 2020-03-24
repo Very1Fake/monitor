@@ -27,8 +27,11 @@ def refresh(**kwargs) -> None:
     for k, v in kwargs.items():
         state[k] = v
     storage.reload_config(config_file)
-    success_hashes.update(cache.load_success_hashes())
     lock.release()
+
+
+def refresh_success_hashes():
+    success_hashes.update(cache.load_success_hashes())
 
 
 class MonitorError(Exception):
@@ -266,6 +269,7 @@ class Main:
         script_manager.load_all()
         script_manager.event_handler.monitor_turning_on()
         refresh(mode=1)
+        refresh_success_hashes()
         return True
 
     @staticmethod
