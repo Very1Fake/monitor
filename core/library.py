@@ -1,8 +1,8 @@
 import collections
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, List, Tuple, Generator, Iterator
-import time
 
 
 class LibraryError(Exception):
