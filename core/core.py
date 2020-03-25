@@ -97,7 +97,7 @@ class Collector(threading.Thread):
                     else:
                         self.log.fatal(CollectorError(f'Target lost while inserting: {i}'))
                 except IndexError:
-                    self.log.warn(f'Inserting non-unique target')
+                    self.log.test(f'Inserting non-unique target')
 
     def step_parsers_check(self) -> None:
         if script_manager.hash() != self.parsers_hash:
@@ -148,11 +148,11 @@ class Collector(threading.Thread):
                 if v.script in script_manager.scripts and v.script in script_manager.parsers:
                     try:
                         if isinstance(v, api.TSmart):
-                            priority = 10 + v.reuse(0)
+                            priority = storage.priority_TSmart[0] + v.reuse(storage.priority_TSmart[1])
                         elif isinstance(v, api.TScheduled):
-                            priority = 50 + v.reuse(0)
+                            priority = storage.priority_TScheduled[0] + v.reuse(storage.priority_TScheduled[1])
                         elif isinstance(v, api.TInterval):
-                            priority = 100 + v.reuse(900)
+                            priority = storage.priority_TInterval[0] + v.reuse(storage.priority_TInterval[1])
                         else:
                             priority = 1001
                         task_queue.put(library.PrioritizedItem(priority, v), timeout=storage.task_queue_put_wait)
