@@ -1,5 +1,6 @@
 import os
 import sys
+import json
 from _hashlib import HASH as Hash
 from hashlib import sha1
 from importlib import import_module
@@ -8,7 +9,7 @@ from typing import Dict, Any, Tuple
 
 from checksumdir import dirhash
 from packaging.version import Version, InvalidVersion
-from yaml import safe_load
+import yaml
 
 from . import api
 from . import storage
@@ -34,16 +35,22 @@ class ScriptIndex:
         if not os.path.isdir(self.path):
             os.makedirs(self.path)
         self.log: Logger = Logger('ScriptIndex')
+        self.config = self.load_config()
+        self.log.info('Config loaded')
         self.index: list = []
+
+    def __del__(self):
+        self.dump_config()
+        self.log.info('Config dumped')
 
     def __repr__(self) -> str:
         return f'ScriptIndex({len(self.index)} script(s) indexed, path="{self.path}")'
 
     def load_config(self) -> dict:
+        config: dict = {'ignore': {'folders': [], 'scripts': []}}
         if os.path.isfile(self.path + '/config.yaml'):
-            raw = safe_load(open(self.path + '/config.yaml'))
+            raw = yaml.safe_load(open(self.path + '/config.yaml'))
             if isinstance(raw, dict):
-                config: dict = {'ignore': {}}
                 if 'ignore' in raw and isinstance(raw['ignore'], dict):
                     if 'folders' in raw['ignore'] and isinstance(raw['ignore']['folders'], list):
                         config['ignore']['folders'] = raw['ignore']['folders']
@@ -56,7 +63,19 @@ class ScriptIndex:
                 return config
             else:
                 self.log.debug('Config doens\'t loaded (must be dict)')
-        return {}
+        return config
+
+    def dump_config(self) -> True:
+        if os.path.isfile(self.path + '/config.yaml'):
+            config_: dict = yaml.safe_load(open(self.path + '/config.yaml'))
+            if isinstance(config_, dict):
+                # TODO: replace isinstance to is (for one comparision)
+                if json.dumps(config_) != json.dumps(self.config):
+                    yaml.safe_dump(self.config, open(self.path + '/config.yaml', 'w+'))
+                    return True
+                return False
+        yaml.safe_dump(self.config, open(self.path + '/config.yaml', 'w+'))
+        return True
 
     @staticmethod
     def check_dependency_version_style(version_: str) -> bool:
@@ -79,7 +98,7 @@ class ScriptIndex:
 
     def check_config(self, file: str) -> bool:
         good = True
-        config: dict = safe_load(open(file))
+        config: dict = yaml.safe_load(open(file))
         if isinstance(config, dict):
             if 'name' not in config:
                 self.log.debug('"name" not specified in ' + file)
@@ -125,7 +144,7 @@ class ScriptIndex:
 
     @staticmethod
     def get_config(file: str) -> dict:
-        raw: dict = safe_load(open(file))
+        raw: dict = yaml.safe_load(open(file))
         config: dict = {
             'name': raw['name'],
             'path': os.path.dirname(file),
@@ -147,10 +166,9 @@ class ScriptIndex:
         return config
 
     def reindex(self) -> None:
-        config_: dict = self.load_config()
         folders: tuple = tuple(
-            i for i in next(os.walk(self.path))[1] if i not in config_['ignore']['folders']  # Get all script folders
-        )
+            i for i in next(os.walk(self.path))[1] if i not in self.config['ignore']['folders']
+        )  # Get all script folders
         names: Tuple[str] = ()
         self.index.clear()
         for i in folders:
@@ -165,7 +183,7 @@ class ScriptIndex:
             if not self.check_dependency_version(config['core']):
                 self.log.info(f'Skipping "{i}/" (script incompatible with core)')
                 continue
-            if 'ignore' in config_ and config['name'] in config_['ignore']['scripts']:
+            if 'ignore' in self.config and config['name'] in self.config['ignore']['scripts']:
                 self.log.info(f'Skipping "{i}/" (ignored by config)')
                 continue
             if config['name'] in names:
@@ -174,6 +192,30 @@ class ScriptIndex:
             names += (config['name'],)  # Save name to check on uniqueness
             self.index.append(config)
         self.log.debug(f'{len(self.index)} script(s) indexed')
+
+    def ignore(self, name: str, folder: bool = False) -> bool:
+        if isinstance(name, str):
+            if folder:
+                if name not in self.config['ignore']['folders']:
+                    self.config['ignore']['folders'].append(name)
+                    return True
+            else:
+                if name not in self.config['ignore']['scripts']:
+                    self.config['ignore']['scripts'].append(name)
+                    return True
+        return False
+
+    def watch(self, name: str, folder: bool = False) -> bool:
+        if isinstance(name, str):
+            if folder:
+                if name not in self.config['ignore']['folders']:
+                    self.config['ignore']['folders'].remove(name)
+                    return True
+            else:
+                if name not in self.config['ignore']['scripts']:
+                    self.config['ignore']['scripts'].remove(name)
+                    return True
+        return False
 
     def get_script(self, name: str) -> dict:
         try:
@@ -238,6 +280,12 @@ class ScriptManager:
         self.scripts: dict = {}
         self.parsers: dict = {}
         self.event_handler: EventHandler = EventHandler()
+
+    def __del__(self):
+        del self.parsers
+        del self.event_handler
+        del self.scripts
+        del self.index
 
     def _destroy(self, name: str) -> bool:  # Memory leak patch
         try:

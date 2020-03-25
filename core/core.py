@@ -11,7 +11,6 @@ from . import scripts
 from . import storage
 
 # TODO: Success hashes object
-# TODO: Targets priority to config
 
 
 config_file = 'core/config.yaml'
@@ -295,6 +294,7 @@ class Main:
             i.join(storage.worker_wait)
 
     def start(self):
+        global script_manager
         self.turn_on()
 
         self.collector.start()
@@ -318,4 +318,5 @@ class Main:
             self.log.info('Saving success hashes complete')
             script_manager.event_handler.monitor_turned_off()
             script_manager.unload_all()
+            del script_manager
             self.log.info('Done')
