@@ -11,6 +11,7 @@ from . import scripts
 from . import storage
 
 # TODO: Success hashes object
+# TODO: Targets priority to config
 
 
 config_file = 'core/config.yaml'
@@ -27,8 +28,11 @@ def refresh(**kwargs) -> None:
     for k, v in kwargs.items():
         state[k] = v
     storage.reload_config(config_file)
-    success_hashes.update(cache.load_success_hashes())
     lock.release()
+
+
+def refresh_success_hashes():
+    success_hashes.update(cache.load_success_hashes())
 
 
 class MonitorError(Exception):
@@ -93,7 +97,7 @@ class Collector(threading.Thread):
                     else:
                         self.log.fatal(CollectorError(f'Target lost while inserting: {i}'))
                 except IndexError:
-                    self.log.warn(f'Inserting non-unique target')
+                    self.log.test(f'Inserting non-unique target')
 
     def step_parsers_check(self) -> None:
         if script_manager.hash() != self.parsers_hash:
@@ -144,13 +148,13 @@ class Collector(threading.Thread):
                 if v.script in script_manager.scripts and v.script in script_manager.parsers:
                     try:
                         if isinstance(v, api.TSmart):
-                            priority = 10
+                            priority = storage.priority_TSmart[0] + v.reuse(storage.priority_TSmart[1])
                         elif isinstance(v, api.TScheduled):
-                            priority = 50
+                            priority = storage.priority_TScheduled[0] + v.reuse(storage.priority_TScheduled[1])
                         elif isinstance(v, api.TInterval):
-                            priority = 100
+                            priority = storage.priority_TInterval[0] + v.reuse(storage.priority_TInterval[1])
                         else:
-                            priority = 1000
+                            priority = 1001
                         task_queue.put(library.PrioritizedItem(priority, v), timeout=storage.task_queue_put_wait)
                     except Full as e:
                         if storage.production:
@@ -235,7 +239,7 @@ class Worker(threading.Thread):
             if state['mode'] == 1:
                 target: library.PrioritizedItem = None
                 try:
-                    target = task_queue.get(timeout=storage.task_queue_get_wait)
+                    target = task_queue.get_nowait()
                 except Empty:
                     pass
                 if target:
@@ -266,6 +270,7 @@ class Main:
         script_manager.load_all()
         script_manager.event_handler.monitor_turning_on()
         refresh(mode=1)
+        refresh_success_hashes()
         return True
 
     @staticmethod

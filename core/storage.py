@@ -20,6 +20,7 @@ def check_config(config_file: str) -> None:
 
 
 def reload_config(config_file: str = 'core/config.yaml') -> None:
+    check_config(config_file)
     globals().update(safe_load(open(config_file)))
 
 
@@ -41,15 +42,19 @@ worker_wait: float = 5
 
 # Queues
 task_queue_size: int = 512  # Size for task_queue (will be waiting if full)
-task_queue_get_wait: float = 1  # Time for wait for get() (in seconds)
 task_queue_put_wait: float = 8
 target_queue_size: int = 512  # Size for target_queue (will be waiting if full)
 target_queue_put_wait: float = 8
 
 # Logger
-log_level: int = 3  # (5 - Test, 4 - Debug, 3 - Info, 2 - Warn, 1 - Error, 0 - Fatal)
+log_level: int = 4  # (5 - Test, 4 - Debug, 3 - Info, 2 - Warn, 1 - Error, 0 - Fatal)
 log_mode: int = 1  # (0 - off, 1 - Console only, 2 - File only, 3 - Console & File)
 log_utc_time: bool = True  # (True - UTC (Coordinated Universal Time), False - local time)
+
+# API
+priority_TSmart: list = [10, 0]
+priority_TScheduled: list = [50, 0]
+priority_TInterval: list = [100, 100]  # First value is base priority, second value is range (0 for static priority)
 
 
 def snapshot() -> dict:

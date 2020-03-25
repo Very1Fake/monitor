@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from hashlib import sha1
-from typing import Tuple, TypeVar, List, Any, Union, Dict, Iterator
+from typing import Tuple, TypeVar, List, Any, Union, Dict
 
 from .logger import Logger
 
@@ -81,6 +81,15 @@ class Target(ABC):
     name: str
     script: str
     data: Any
+    reused: int = field(init=False, default=-1)
+
+    def reuse(self, max_: int) -> int:
+        if max_ > 0:
+            if self.reused >= max_:
+                self.reused = 0
+            else:
+                self.reused += 1
+        return self.reused
 
     def content_hash(self) -> int:
         return int(sha1(
@@ -93,8 +102,7 @@ TargetType = TypeVar('TargetType', bound=Target)
 
 @dataclass
 class TInterval(Target):
-    __slots__ = ('name', 'script', 'data', 'interval')
-    interval: float
+    interval: int
 
     def hash(self) -> int:
         return int(sha1(
@@ -107,7 +115,6 @@ class TInterval(Target):
 
 @dataclass
 class TScheduled(Target):
-    __slots__ = ('name', 'script', 'data', 'timestamp')
     timestamp: float
 
     def hash(self) -> int:
@@ -121,7 +128,6 @@ class TScheduled(Target):
 
 @dataclass
 class TSmart(Target):
-    __slots__ = ('name', 'script', 'data', 'length', 'scatter', 'timestamp')
     length: int
     scatter: int
     timestamp: float
