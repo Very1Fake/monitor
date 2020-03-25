@@ -54,12 +54,14 @@ class Collector(threading.Thread):
         self.schedule_targets: library.UniqueSchedule = library.UniqueSchedule(storage.targets_hashes_size)
         self.parsers_hash: str = ''
 
-    def throw(self, message) -> None:
+    def throw(self, message, description: str = '') -> None:
         if storage.production:
             if self.log.error(message):
-                script_manager.event_handler.error(message, self.name)
+                script_manager.event_handler.error(description + '\n' + message if description else message, self.name)
         else:
-            script_manager.event_handler.fatal(CollectorError(message), self.name)
+            script_manager.event_handler.fatal(CollectorError(
+                description + '\n' + message if description else message
+            ), self.name)
             self.log.fatal(CollectorError(message))
 
     def insert_index(self, index: api.IndexType, now: float, force: bool = False) -> None:
@@ -187,12 +189,14 @@ class Worker(threading.Thread):
         self.id = id_
         self.log: logger.Logger = logger.Logger(self.name)
 
-    def throw(self, message) -> None:
+    def throw(self, message, description: str = '') -> None:
         if storage.production:
             if self.log.error(message):
-                script_manager.event_handler.error(message, self.name)
+                script_manager.event_handler.error(description + '\n' + message if description else message, self.name)
         else:
-            script_manager.event_handler.fatal(WorkerError(message), self.name)
+            script_manager.event_handler.fatal(WorkerError(
+                description + '\n' + message if description else message
+            ), self.name)
             self.log.fatal(WorkerError(message))
 
     def execute(self, target: api.TargetType) -> bool:
@@ -236,13 +240,17 @@ class Worker(threading.Thread):
         while True:
             start: float = time()
             if state['mode'] == 1:
-                target: library.PrioritizedItem = None
                 try:
-                    target = task_queue.get_nowait()
-                except Empty:
-                    pass
-                if target:
-                    self.execute(target.content)
+                    target: library.PrioritizedItem = None
+                    try:
+                        target = task_queue.get_nowait()
+                    except Empty:
+                        pass
+                    if target:
+                        self.execute(target.content)
+                except Exception as e:
+                    self.throw(f'{e.__str__()} while working', f'{self.name} unexpectedly turned off')
+                    break
             elif state['mode'] == 3:
                 self.log.info('Thread closed')
                 break
