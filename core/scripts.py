@@ -39,12 +39,13 @@ class ScriptIndex:
         self.log.info('Config loaded')
         self.index: list = []
 
-    def __del__(self):
-        self.dump_config()
-        self.log.info('Config dumped')
-
     def __repr__(self) -> str:
         return f'ScriptIndex({len(self.index)} script(s) indexed, path="{self.path}")'
+
+    def del_(self):
+        self.dump_config()
+        self.log.info('Config dumped')
+        del self
 
     def load_config(self) -> dict:
         config: dict = {'ignore': {'folders': [], 'scripts': []}}
@@ -162,6 +163,10 @@ class ScriptIndex:
             config['keep'] = raw['keep']
         else:
             config['keep'] = False
+        if 'max-errors' in raw:
+            config['max-errors'] = raw['max-errors'] if config['can_be_unloaded'] else -1
+        else:
+            config['max-errors'] = -1
         config['hash'] = dirhash(os.path.dirname(file), 'sha1')
         return config
 
@@ -281,11 +286,12 @@ class ScriptManager:
         self.parsers: dict = {}
         self.event_handler: EventHandler = EventHandler()
 
-    def __del__(self):
+    def del_(self):
         del self.parsers
         del self.event_handler
         del self.scripts
         del self.index
+        del self
 
     def _destroy(self, name: str) -> bool:  # Memory leak patch
         try:
@@ -319,6 +325,7 @@ class ScriptManager:
         self._destroy(module.__name__)
         if success:
             self.scripts[script['name']] = {k: v for k, v in script.items() if k != 'name'}
+            self.scripts[script['name']]['errors'] = -1
         else:
             self.log.warn(f'Nothing to import in "{script["name"]}"')
         return success
@@ -434,10 +441,13 @@ class ScriptManager:
     def execute_parser(self, name: str, func: str, args: tuple) -> Tuple[bool, Any]:
         try:
             return True, getattr(self.get_parser(name), func)(*args)
-        except KeyError:
-            raise ScriptManagerError(f'Script "{name}" not loaded')
-        except Exception as e:
-            if self.scripts[name]['important']:
-                return False, None
+        except ScriptManagerError as e:
+            raise e
+        except Exception:
+            if self.scripts[name]['important'] and self.scripts[name]['max-errors'] == -1 or \
+                    self.scripts[name]['errors'] < self.scripts[name]['max-errors']:
+                self.scripts[name]['errors'] += 1
             else:
-                raise e
+                self.log.warn(f'Max errors for "{name}" reached unloading...')
+                self.unload(name)
+            return False, None

@@ -249,7 +249,10 @@ class Worker(threading.Thread):
                     if target:
                         self.execute(target.content)
                 except Exception as e:
-                    self.throw(f'{e.__str__()} while working', f'{self.name} unexpectedly turned off')
+                    self.throw(
+                        f'While working: {e.__class__.__name__}: {e.__str__()}',
+                        f'{self.name} unexpectedly turned off'
+                    )
                     break
             elif state['mode'] == 3:
                 self.log.info('Thread closed')
@@ -302,7 +305,6 @@ class Main:
             i.join(storage.worker_wait)
 
     def start(self):
-        global script_manager
         self.turn_on()
 
         self.collector.start()
@@ -326,5 +328,5 @@ class Main:
             self.log.info('Saving success hashes complete')
             script_manager.event_handler.monitor_turned_off()
             script_manager.unload_all()
-            del script_manager
+            script_manager.del_()
             self.log.info('Done')
