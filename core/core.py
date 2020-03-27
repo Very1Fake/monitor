@@ -162,9 +162,9 @@ class Collector(threading.Thread):
                             self.log.error(f'Target lost in pipeline: {v}')
                         else:
                             self.log.fatal(CollectorError(f'Target lost in pipeline: {v}'), e)
-                    ids += (k,)
                 else:
                     self.log.error(f'Target lost in pipeline (script unloaded): {v}')
+                ids += (k,)
             self.schedule_targets.pop_item(ids)
 
     def run(self) -> None:

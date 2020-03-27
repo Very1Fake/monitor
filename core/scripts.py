@@ -70,7 +70,6 @@ class ScriptIndex:
         if os.path.isfile(self.path + '/config.yaml'):
             config_: dict = yaml.safe_load(open(self.path + '/config.yaml'))
             if isinstance(config_, dict):
-                # TODO: replace isinstance to is (for one comparision)
                 if json.dumps(config_) != json.dumps(self.config):
                     yaml.safe_dump(self.config, open(self.path + '/config.yaml', 'w+'))
                     return True
