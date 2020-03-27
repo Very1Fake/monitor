@@ -49,6 +49,26 @@ class Result:
     sizes: SizeType
     footer: FooterType
 
+    def __post_init__(self):
+        if not isinstance(self.name, str):
+            raise ValueError('name must be str')
+        if not isinstance(self.url, str):
+            raise ValueError('url must be str')
+        if not isinstance(self.channel, str):
+            raise ValueError('channel must be str')
+        if not isinstance(self.image, str):
+            raise ValueError('image must be str')
+        if not isinstance(self.description, str):
+            raise ValueError('description must be str')
+        if not isinstance(self.price, (tuple, list)):
+            raise ValueError('price must be tuple or list')
+        if not isinstance(self.fields, dict):
+            raise ValueError('fields must be dict')
+        if not isinstance(self.sizes, (tuple, list)):
+            raise ValueError('sizes must be tuple or list')
+        if not isinstance(self.footer, (tuple, list)):
+            raise ValueError('footer must be tuple or list')
+
 
 # Indexing
 

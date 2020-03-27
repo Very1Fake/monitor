@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 from _hashlib import HASH as Hash
@@ -6,9 +7,9 @@ from importlib import import_module
 from types import ModuleType
 from typing import Dict, Any, Tuple
 
+import yaml
 from checksumdir import dirhash
 from packaging.version import Version, InvalidVersion
-from yaml import safe_load
 
 from . import api
 from . import storage
@@ -34,16 +35,23 @@ class ScriptIndex:
         if not os.path.isdir(self.path):
             os.makedirs(self.path)
         self.log: Logger = Logger('ScriptIndex')
+        self.config = self.load_config()
+        self.log.info('Config loaded')
         self.index: list = []
 
     def __repr__(self) -> str:
         return f'ScriptIndex({len(self.index)} script(s) indexed, path="{self.path}")'
 
+    def del_(self):
+        self.dump_config()
+        self.log.info('Config dumped')
+        del self
+
     def load_config(self) -> dict:
+        config: dict = {'ignore': {'folders': [], 'scripts': []}}
         if os.path.isfile(self.path + '/config.yaml'):
-            raw = safe_load(open(self.path + '/config.yaml'))
+            raw = yaml.safe_load(open(self.path + '/config.yaml'))
             if isinstance(raw, dict):
-                config: dict = {'ignore': {}}
                 if 'ignore' in raw and isinstance(raw['ignore'], dict):
                     if 'folders' in raw['ignore'] and isinstance(raw['ignore']['folders'], list):
                         config['ignore']['folders'] = raw['ignore']['folders']
@@ -56,7 +64,18 @@ class ScriptIndex:
                 return config
             else:
                 self.log.debug('Config doens\'t loaded (must be dict)')
-        return {}
+        return config
+
+    def dump_config(self) -> True:
+        if os.path.isfile(self.path + '/config.yaml'):
+            config_: dict = yaml.safe_load(open(self.path + '/config.yaml'))
+            if isinstance(config_, dict):
+                if json.dumps(config_) != json.dumps(self.config):
+                    yaml.safe_dump(self.config, open(self.path + '/config.yaml', 'w+'))
+                    return True
+                return False
+        yaml.safe_dump(self.config, open(self.path + '/config.yaml', 'w+'))
+        return True
 
     @staticmethod
     def check_dependency_version_style(version_: str) -> bool:
@@ -79,7 +98,7 @@ class ScriptIndex:
 
     def check_config(self, file: str) -> bool:
         good = True
-        config: dict = safe_load(open(file))
+        config: dict = yaml.safe_load(open(file))
         if isinstance(config, dict):
             if 'name' not in config:
                 self.log.debug('"name" not specified in ' + file)
@@ -125,7 +144,7 @@ class ScriptIndex:
 
     @staticmethod
     def get_config(file: str) -> dict:
-        raw: dict = safe_load(open(file))
+        raw: dict = yaml.safe_load(open(file))
         config: dict = {
             'name': raw['name'],
             'path': os.path.dirname(file),
@@ -143,14 +162,17 @@ class ScriptIndex:
             config['keep'] = raw['keep']
         else:
             config['keep'] = False
+        if 'max-errors' in raw:
+            config['max-errors'] = raw['max-errors'] if config['can_be_unloaded'] else -1
+        else:
+            config['max-errors'] = -1
         config['hash'] = dirhash(os.path.dirname(file), 'sha1')
         return config
 
     def reindex(self) -> None:
-        config_: dict = self.load_config()
         folders: tuple = tuple(
-            i for i in next(os.walk(self.path))[1] if i not in config_['ignore']['folders']  # Get all script folders
-        )
+            i for i in next(os.walk(self.path))[1] if i not in self.config['ignore']['folders']
+        )  # Get all script folders
         names: Tuple[str] = ()
         self.index.clear()
         for i in folders:
@@ -165,7 +187,7 @@ class ScriptIndex:
             if not self.check_dependency_version(config['core']):
                 self.log.info(f'Skipping "{i}/" (script incompatible with core)')
                 continue
-            if 'ignore' in config_ and config['name'] in config_['ignore']['scripts']:
+            if 'ignore' in self.config and config['name'] in self.config['ignore']['scripts']:
                 self.log.info(f'Skipping "{i}/" (ignored by config)')
                 continue
             if config['name'] in names:
@@ -174,6 +196,30 @@ class ScriptIndex:
             names += (config['name'],)  # Save name to check on uniqueness
             self.index.append(config)
         self.log.debug(f'{len(self.index)} script(s) indexed')
+
+    def ignore(self, name: str, folder: bool = False) -> bool:
+        if isinstance(name, str):
+            if folder:
+                if name not in self.config['ignore']['folders']:
+                    self.config['ignore']['folders'].append(name)
+                    return True
+            else:
+                if name not in self.config['ignore']['scripts']:
+                    self.config['ignore']['scripts'].append(name)
+                    return True
+        return False
+
+    def watch(self, name: str, folder: bool = False) -> bool:
+        if isinstance(name, str):
+            if folder:
+                if name not in self.config['ignore']['folders']:
+                    self.config['ignore']['folders'].remove(name)
+                    return True
+            else:
+                if name not in self.config['ignore']['scripts']:
+                    self.config['ignore']['scripts'].remove(name)
+                    return True
+        return False
 
     def get_script(self, name: str) -> dict:
         try:
@@ -239,6 +285,13 @@ class ScriptManager:
         self.parsers: dict = {}
         self.event_handler: EventHandler = EventHandler()
 
+    def del_(self):
+        del self.parsers
+        del self.event_handler
+        del self.scripts
+        del self.index
+        del self
+
     def _destroy(self, name: str) -> bool:  # Memory leak patch
         try:
             del sys.modules[name]
@@ -271,6 +324,7 @@ class ScriptManager:
         self._destroy(module.__name__)
         if success:
             self.scripts[script['name']] = {k: v for k, v in script.items() if k != 'name'}
+            self.scripts[script['name']]['errors'] = -1
         else:
             self.log.warn(f'Nothing to import in "{script["name"]}"')
         return success
@@ -386,10 +440,13 @@ class ScriptManager:
     def execute_parser(self, name: str, func: str, args: tuple) -> Tuple[bool, Any]:
         try:
             return True, getattr(self.get_parser(name), func)(*args)
-        except KeyError:
-            raise ScriptManagerError(f'Script "{name}" not loaded')
-        except Exception as e:
-            if self.scripts[name]['important']:
-                return False, None
+        except ScriptManagerError as e:
+            raise e
+        except Exception:
+            if self.scripts[name]['important'] and self.scripts[name]['max-errors'] == -1 or \
+                    self.scripts[name]['errors'] < self.scripts[name]['max-errors']:
+                self.scripts[name]['errors'] += 1
             else:
-                raise e
+                self.log.warn(f'Max errors for "{name}" reached unloading...')
+                self.unload(name)
+            return False, None
