@@ -1,15 +1,15 @@
+import json
 import os
 import sys
-import json
 from _hashlib import HASH as Hash
 from hashlib import sha1
 from importlib import import_module
 from types import ModuleType
 from typing import Dict, Any, Tuple
 
+import yaml
 from checksumdir import dirhash
 from packaging.version import Version, InvalidVersion
-import yaml
 
 from . import api
 from . import storage
