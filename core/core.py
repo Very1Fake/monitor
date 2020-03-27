@@ -1,6 +1,6 @@
+import queue
 import threading
-from queue import Queue, PriorityQueue, Empty, Full
-from time import sleep, time
+import time
 from typing import Tuple, List
 
 from . import api
@@ -18,8 +18,8 @@ state: dict = {'mode': 0}
 lock: threading.Lock = threading.Lock()
 script_manager: scripts.ScriptManager = scripts.ScriptManager()
 success_hashes: library.Schedule = library.Schedule()
-task_queue: PriorityQueue = PriorityQueue(storage.task_queue_size)
-target_queue: Queue = Queue(storage.target_queue_size)
+task_queue: queue.PriorityQueue = queue.PriorityQueue(storage.task_queue_size)
+target_queue: queue.Queue = queue.Queue(storage.target_queue_size)
 
 
 def refresh(**kwargs) -> None:
@@ -47,12 +47,17 @@ class WorkerError(Exception):
 
 
 class Collector(threading.Thread):
+    log: logger.Logger
+    schedule_indices: library.Schedule
+    schedule_targets: library.UniqueSchedule
+    parsers_hash: str
+
     def __init__(self):
         super().__init__(name='Collector', daemon=True)
-        self.log: logger.Logger = logger.Logger(self.name)
-        self.schedule_indices: library.Schedule = library.Schedule()
-        self.schedule_targets: library.UniqueSchedule = library.UniqueSchedule(storage.targets_hashes_size)
-        self.parsers_hash: str = ''
+        self.log = logger.Logger(self.name)
+        self.schedule_indices = library.Schedule()
+        self.schedule_targets = library.UniqueSchedule(storage.targets_hashes_size)
+        self.parsers_hash = ''
 
     def throw(self, message, description: str = '') -> None:
         if storage.production:
@@ -83,7 +88,10 @@ class Collector(threading.Thread):
             if i.content_hash() not in success_hashes.values():
                 try:
                     if isinstance(i, api.TSmart):
-                        time_ = library.smart_extractor(library.smart_gen(i.timestamp, i.length, i.scatter), time())
+                        time_ = library.smart_extractor(
+                            library.smart_gen(i.timestamp, i.length, i.scatter),
+                            time.time()
+                        )
                         if time_:  # TODO: Fix here (expired must be checked once)
                             self.schedule_targets[time_] = i
                         else:
@@ -91,7 +99,7 @@ class Collector(threading.Thread):
                     elif isinstance(i, api.TScheduled):
                         self.schedule_targets[i.timestamp] = i
                     elif isinstance(i, api.TInterval):
-                        self.schedule_targets[time() + i.interval] = i
+                        self.schedule_targets[time.time() + i.interval] = i
                 except ValueError:
                     if storage.production:
                         self.log.warn(f'Target lost while inserting: {i}')
@@ -106,7 +114,7 @@ class Collector(threading.Thread):
             for i in script_manager.parsers:
                 ok, index = script_manager.execute_parser(i, 'index', ())
                 if ok:
-                    self.insert_index(index, time(), True)
+                    self.insert_index(index, time.time(), True)
                 else:
                     self.log.error(f'Parser execution failed {i}')
             self.parsers_hash = script_manager.hash()
@@ -114,7 +122,7 @@ class Collector(threading.Thread):
 
     def step_reindex(self) -> bool:
         try:
-            id_, index = next(self.schedule_indices.get_slice_gen(time()))
+            id_, index = next(self.schedule_indices.get_slice_gen(time.time()))
             ok, targets = script_manager.execute_parser(index.script, 'targets', ())
             if ok:
                 if isinstance(targets, (tuple, list)):
@@ -125,7 +133,7 @@ class Collector(threading.Thread):
                         self.log.error(f'Wrong target list received from "{index.script}"')
                     else:
                         self.log.fatal(CollectorError(f'Wrong target list received from "{index.script}"'))
-                self.insert_index(index, time())
+                self.insert_index(index, time.time())
                 self.schedule_indices.pop_item(id_)
                 return True
             else:
@@ -139,13 +147,13 @@ class Collector(threading.Thread):
             try:
                 while True:
                     self.insert_target(target_queue.get_nowait())
-            except Empty:
+            except queue.Empty:
                 return
 
     def step_send_tasks(self) -> None:
-        if any(self.schedule_targets.get_slice_gen(time())):
+        if any(self.schedule_targets.get_slice_gen(time.time())):
             ids: Tuple[float] = ()
-            for k, v in self.schedule_targets.get_slice_gen(time()):
+            for k, v in self.schedule_targets.get_slice_gen(time.time()):
                 if v.script in script_manager.scripts and v.script in script_manager.parsers:
                     try:
                         if isinstance(v, api.TSmart):
@@ -157,7 +165,7 @@ class Collector(threading.Thread):
                         else:
                             priority = 1001
                         task_queue.put(library.PrioritizedItem(priority, v), timeout=storage.task_queue_put_wait)
-                    except Full as e:
+                    except queue.Full as e:
                         if storage.production:
                             self.log.error(f'Target lost in pipeline: {v}')
                         else:
@@ -169,9 +177,9 @@ class Collector(threading.Thread):
 
     def run(self) -> None:
         while True:
-            start: float = time()
+            start: float = time.time()
             if state['mode'] == 1:
-                success_hashes.del_slice(time())
+                success_hashes.del_slice(time.time())
                 self.step_parsers_check()
                 self.step_reindex()
                 self.step_target_queue_check()
@@ -179,15 +187,18 @@ class Collector(threading.Thread):
             elif state['mode'] == 3:
                 self.log.info('Thread closed')
                 break
-            delta: float = time() - start
-            sleep(storage.collector_tick - delta if storage.collector_tick - delta >= 0 else 0)
+            delta: float = time.time() - start
+            time.sleep(storage.collector_tick - delta if storage.collector_tick - delta >= 0 else 0)
 
 
 class Worker(threading.Thread):
-    def __init__(self, id_: int):
-        super().__init__(name=f'Worker-{id_}', daemon=True)
+    id: int
+    log: logger.Logger
+
+    def __init__(self, id_: int, postfix: str = ''):
+        super().__init__(name=f'Worker-{id_}{postfix}', daemon=True)
         self.id = id_
-        self.log: logger.Logger = logger.Logger(self.name)
+        self.log = logger.Logger(self.name)
 
     def throw(self, message, description: str = '') -> None:
         if storage.production:
@@ -209,14 +220,14 @@ class Worker(threading.Thread):
                         self.log.debug(f'Result: {status}')
                         try:
                             target_queue.put(status.target, timeout=storage.target_queue_put_wait)
-                        except Full as e:
+                        except queue.Full as e:
                             if storage.production:
                                 self.log.error(f'Target lost in pipeline: {status.target}')
                             else:
                                 self.log.fatal(WorkerError(f'Target lost in pipeline: {status.target}'), e)
                     elif isinstance(status, api.SSuccess):
                         self.log.info(f'Item now available: {status.result}')
-                        success_hashes[time() + storage.success_hashes_time] = target.content_hash()
+                        success_hashes[time.time() + storage.success_hashes_time] = target.content_hash()
                         script_manager.event_handler.success_status(status)
                     elif isinstance(status, api.SFail):
                         self.log.warn(f'Target lost: {status}')
@@ -238,13 +249,13 @@ class Worker(threading.Thread):
 
     def run(self) -> None:
         while True:
-            start: float = time()
+            start: float = time.time()
             if state['mode'] == 1:
                 try:
                     target: library.PrioritizedItem = None
                     try:
                         target = task_queue.get_nowait()
-                    except Empty:
+                    except queue.Empty:
                         pass
                     if target:
                         self.execute(target.content)
@@ -257,21 +268,26 @@ class Worker(threading.Thread):
             elif state['mode'] == 3:
                 self.log.info('Thread closed')
                 break
-            delta: float = time() - start
-            sleep(storage.worker_tick - delta if storage.worker_tick - delta >= 0 else 0)
+            delta: float = time.time() - start
+            time.sleep(storage.worker_tick - delta if storage.worker_tick - delta >= 0 else 0)
 
 
 class Main:
+    log: logger.Logger
+    collector: Collector
+    workers_increment: int
+    workers: List[Worker]
+
     def __init__(self, config_file_: str = None):
         global config_file
         if config_file_:
             config_file = config_file_
         storage.check_config(config_file)
         refresh()
-        self.log: logger.Logger = logger.Logger('Core')
-        self.collector: Collector = Collector()
-        self.workers_increment: int = 0
-        self.workers: List[Worker] = []
+        self.log = logger.Logger('Core')
+        self.collector = Collector()
+        self.workers_increment = 0
+        self.workers = []
 
     def turn_on(self) -> bool:
         if storage.production:
@@ -314,7 +330,7 @@ class Main:
 
         try:
             while self.collector.is_alive():
-                sleep(1)
+                time.sleep(1)
             self.log.fatal(MonitorError('Collector unexpectedly has turned off'))
         except KeyboardInterrupt:
             self.log.info('Signal Interrupt!')

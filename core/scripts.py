@@ -1,9 +1,9 @@
+import hashlib
+import importlib
 import json
 import os
 import sys
-from _hashlib import HASH as Hash
-from hashlib import sha1
-from importlib import import_module
+from _hashlib import HASH
 from types import ModuleType
 from typing import Dict, Any, Tuple
 
@@ -319,7 +319,7 @@ class ScriptManager:
     def _load(self, script) -> bool:
         if isinstance(script, str):
             script: dict = self.index.get_script(script)
-        module: ModuleType = import_module(script['path'].replace('/', '.'))
+        module: ModuleType = importlib.import_module(script['path'].replace('/', '.'))
         success = self._scan(script, module)
         self._destroy(module.__name__)
         if success:
@@ -344,7 +344,7 @@ class ScriptManager:
         if self.scripts[name]['can_be_unloaded']:
             script: dict = self.scripts[name]
             if script:
-                module: ModuleType = import_module(script['path'].replace('/', '.'))
+                module: ModuleType = importlib.import_module(script['path'].replace('/', '.'))
                 self._scan(script, module)
                 self._destroy(module.__name__)
             else:
@@ -423,7 +423,7 @@ class ScriptManager:
         return True
 
     def hash(self) -> str:
-        hash_: Hash = sha1(b'')
+        hash_: HASH = hashlib.sha1(b'')
         for i in [i['hash'] for i in self.scripts.values()]:
             hash_.update(i.encode())
         return hash_.hexdigest()
