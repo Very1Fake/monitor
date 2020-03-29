@@ -442,11 +442,14 @@ class ScriptManager:
             return True, getattr(self.get_parser(name), func)(*args)
         except ScriptManagerError as e:
             raise e
-        except Exception:
-            if self.scripts[name]['important'] and self.scripts[name]['max-errors'] == -1 or \
-                    self.scripts[name]['errors'] < self.scripts[name]['max-errors']:
-                self.scripts[name]['errors'] += 1
+        except Exception as e:
+            if self.scripts[name]['important']:
+                if self.scripts[name]['max-errors'] == -1 or \
+                        self.scripts[name]['errors'] < self.scripts[name]['max-errors']:
+                    self.scripts[name]['errors'] += 1
+                else:
+                    self.log.warn(f'Max errors for "{name}" reached unloading...')
+                    self.unload(name)
+                return False, None
             else:
-                self.log.warn(f'Max errors for "{name}" reached unloading...')
-                self.unload(name)
-            return False, None
+                raise e
