@@ -29,6 +29,9 @@ production: bool = False  # If True monitor will try to avoid fatal errors as po
 logs_folder: str = 'logs'
 cache_folder: str = '.cache'
 
+# ThreadManager
+thread_manager_tick: float = 1
+
 # Collector
 collector_tick: float = .5  # Delta time for queue manage (in seconds)
 collector_wait: float = 10  # Timeout to join() when turning off monitor (in seconds)
@@ -36,7 +39,8 @@ targets_hashes_size: int = 1024
 success_hashes_time: int = 172800  # How long save hashes of success targets
 
 # Worker
-workers_count: int = 3
+workers_count: int = 3  # Max workers count in normal condition
+workers_proportion: float = 1.5  # Max workers count in overload condition (ceil(workers_count * workers_proportion))
 worker_tick: float = 1  # Delta time for worker run loop
 worker_wait: float = 5
 

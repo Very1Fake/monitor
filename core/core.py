@@ -1,7 +1,7 @@
 import queue
 import threading
 import time
-from typing import Tuple, List
+from typing import Tuple, List, Dict
 
 from . import api
 from . import cache
@@ -14,20 +14,14 @@ from . import storage
 
 
 config_file = 'core/config.yaml'
-state: dict = {'mode': 0}
-lock: threading.Lock = threading.Lock()
 script_manager: scripts.ScriptManager = scripts.ScriptManager()
 success_hashes: library.Schedule = library.Schedule()
 task_queue: queue.PriorityQueue = queue.PriorityQueue(storage.task_queue_size)
 target_queue: queue.Queue = queue.Queue(storage.target_queue_size)
 
 
-def refresh(**kwargs) -> None:
-    lock.acquire()
-    for k, v in kwargs.items():
-        state[k] = v
+def refresh() -> None:
     storage.reload_config(config_file)
-    lock.release()
 
 
 def refresh_success_hashes():
@@ -35,6 +29,10 @@ def refresh_success_hashes():
 
 
 class MonitorError(Exception):
+    pass
+
+
+class ThreadManagerError(Exception):
     pass
 
 
@@ -47,6 +45,7 @@ class WorkerError(Exception):
 
 
 class Collector(threading.Thread):
+    _state: int
     log: logger.Logger
     schedule_indices: library.Schedule
     schedule_targets: library.UniqueSchedule
@@ -54,10 +53,29 @@ class Collector(threading.Thread):
 
     def __init__(self):
         super().__init__(name='Collector', daemon=True)
+        self._state = 0
         self.log = logger.Logger(self.name)
         self.schedule_indices = library.Schedule()
         self.schedule_targets = library.UniqueSchedule(storage.targets_hashes_size)
         self.parsers_hash = ''
+
+    @property
+    def state(self) -> int:
+        return self._state
+
+    @state.setter
+    def state(self, value: int) -> None:
+        if isinstance(value, int):
+            if self._state == 1 and value not in (2, 5):
+                raise CollectorError('In this state, you can change state only to 2 or 5')
+            elif self._state in (2, 4, 5):
+                raise CollectorError('State locked')
+            elif self._state == 3 and value not in (4, 5):
+                raise CollectorError('In this state, you can change state only to 4 or 5')
+            else:
+                self._state = value
+        else:
+            ValueError('state must be int')
 
     def throw(self, message, description: str = '') -> None:
         if storage.production:
@@ -176,15 +194,31 @@ class Collector(threading.Thread):
             self.schedule_targets.pop_item(ids)
 
     def run(self) -> None:
+        self.state = 1
         while True:
             start: float = time.time()
-            if state['mode'] == 1:
-                success_hashes.del_slice(time.time())
-                self.step_parsers_check()
-                self.step_reindex()
-                self.step_target_queue_check()
-                self.step_send_tasks()
-            elif state['mode'] == 3:
+            if self.state == 1:  # Active state
+                try:
+                    success_hashes.del_slice(time.time())
+                    self.step_parsers_check()
+                    self.step_reindex()
+                    self.step_target_queue_check()
+                    self.step_send_tasks()
+                except Exception as e:
+                    self.throw(
+                        f'While working: {e.__class__.__name__}: {e.__str__()}',
+                        f'Collector unexpectedly turned off'
+                    )
+                    break
+            elif self.state == 2:  # Pausing state
+                self.log.info('Thread paused')
+                self.state = 3
+            elif self.state == 3:  # Paused state
+                pass
+            elif self.state == 4:  # Resuming state
+                self.log.info('Thread resumed')
+                self.state = 1
+            elif self.state == 5:  # Stopping state
                 self.log.info('Thread closed')
                 break
             delta: float = time.time() - start
@@ -193,12 +227,34 @@ class Collector(threading.Thread):
 
 class Worker(threading.Thread):
     id: int
+    additional: bool
+    _state: int
     log: logger.Logger
 
-    def __init__(self, id_: int, postfix: str = ''):
+    def __init__(self, id_: int, additional: bool = False, postfix: str = ''):
         super().__init__(name=f'Worker-{id_}{postfix}', daemon=True)
         self.id = id_
+        self.additional = additional
+        self._state = 0
         self.log = logger.Logger(self.name)
+
+    @property
+    def state(self) -> int:
+        return self._state
+
+    @state.setter
+    def state(self, value: int) -> None:
+        if isinstance(value, int):
+            if self._state == 1 and value not in (2, 5):
+                raise WorkerError('In this state, you can change state only to 2 or 5')
+            elif self._state in (2, 4, 5):
+                raise WorkerError('State locked')
+            elif self._state == 3 and value not in (4, 5):
+                raise WorkerError('In this state, you can change state only to 4 or 5')
+            else:
+                self._state = value
+        else:
+            ValueError('state must be int')
 
     def throw(self, message, description: str = '') -> None:
         if storage.production:
@@ -248,9 +304,10 @@ class Worker(threading.Thread):
                 self.log.error(f'Target lost in pipeline (script unloaded): {target}')
 
     def run(self) -> None:
+        self.state = 1
         while True:
             start: float = time.time()
-            if state['mode'] == 1:
+            if self.state == 1:
                 try:
                     target: library.PrioritizedItem = None
                     try:
@@ -265,18 +322,126 @@ class Worker(threading.Thread):
                         f'{self.name} unexpectedly turned off'
                     )
                     break
-            elif state['mode'] == 3:
+            elif self.state == 2:  # Pausing state
+                self.log.info('Thread paused')
+                self.state = 3
+            elif self.state == 3:  # Paused state
+                pass
+            elif self.state == 4:  # Resuming state
+                self.log.info('Thread resumed')
+                self.state = 1
+            elif self.state == 5:  # Stopping state
                 self.log.info('Thread closed')
                 break
             delta: float = time.time() - start
             time.sleep(storage.worker_tick - delta if storage.worker_tick - delta >= 0 else 0)
 
 
+class ThreadManager(threading.Thread):
+    state: int
+    log: logger.Logger
+    workers_increment_id: int
+    workers: Dict[int, Worker]
+    collector: Collector
+
+    def __init__(self) -> None:
+        super().__init__(name='ThreadManager', daemon=True)
+        self.state = 0
+        self.log = logger.Logger('ThreadManager')
+        self.workers_increment_id = 0
+        self.workers = {}
+        self.collector = None
+
+    def throw(self, message, description: str = '') -> None:
+        if storage.production:
+            if self.log.error(message):
+                script_manager.event_handler.error(description + '\n' + message if description else message, self.name)
+        else:
+            script_manager.event_handler.fatal(ThreadManagerError(
+                description + '\n' + message if description else message
+            ), self.name)
+            self.log.fatal(ThreadManagerError(message))
+
+    def workers_count(self, additional: bool = False) -> int:
+        count = 0
+        for i in self.workers.values():
+            if i.additional == additional:
+                count += 1
+        return count
+
+    def check_collector(self) -> None:
+        if not self.collector:
+            self.collector = Collector()
+            self.log.info('Collector initialized')
+        if not self.collector.is_alive():
+            try:
+                self.collector.start()
+                self.log.info('Collector started')
+            except RuntimeError:
+                self.log.error('Collector was unexpectedly stopped')
+                self.collector = None
+
+    def check_workers(self) -> None:
+        if self.workers_count() < storage.workers_count:
+            self.workers[self.workers_increment_id] = Worker(self.workers.__len__())
+            self.log.info(f'Worker-{self.workers_increment_id} initialized')
+            self.workers_increment_id += 1
+        for v in self.workers.values():
+            if not v.is_alive():
+                try:
+                    v.start()
+                    self.log.info(f'{v.name} started')
+                except RuntimeError:
+                    self.log.error(f'{v.name} was unexpectedly stopped')
+                    del self.workers[v.id]
+
+    def stop_threads(self) -> None:
+        for i in tuple(self.workers.values()):
+            i.state = 5
+            i.join(storage.worker_wait)
+        self.collector.state = 5
+        self.collector.join(storage.collector_wait)
+
+    def run(self) -> None:
+        self.state = 1
+        while True:
+            try:
+                start: float = time.time()
+                if self.state == 1:
+                    self.check_collector()
+                    self.check_workers()
+                elif self.state == 2:  # Pausing state
+                    self.log.info('Thread paused')
+                    self.state = 3
+                elif self.state == 3:  # Paused state
+                    pass
+                elif self.state == 4:  # Resuming state
+                    self.log.info('Thread resumed')
+                    self.state = 1
+                elif self.state == 5:  # Stopping state
+                    self.log.info('Thread closing')
+                    self.stop_threads()
+                    self.log.info('Thread closed')
+                    break
+                delta: float = time.time() - start
+                time.sleep(storage.thread_manager_tick - delta if storage.thread_manager_tick - delta >= 0 else 0)
+            except Exception as e:
+                self.log.fatal_msg(f'Exception raised, emergency stop initiated. {e.__class__.__name__}: {e.__str__()}')
+                self.stop_threads()
+                self.throw(
+                    f'While working: {e.__class__.__name__}: {e.__str__()}',
+                    f'ThreadManager unexpectedly turned off'
+                )
+                break
+
+    def close(self) -> float:
+        self.state = 5
+        return storage.collector_wait + self.workers.__len__() * (storage.worker_wait + 1)
+
+
 class Main:
     log: logger.Logger
-    collector: Collector
-    workers_increment: int
-    workers: List[Worker]
+    thread_manager: ThreadManager
 
     def __init__(self, config_file_: str = None):
         global config_file
@@ -285,9 +450,7 @@ class Main:
         storage.check_config(config_file)
         refresh()
         self.log = logger.Logger('Core')
-        self.collector = Collector()
-        self.workers_increment = 0
-        self.workers = []
+        self.thread_manager = ThreadManager()
 
     def turn_on(self) -> bool:
         if storage.production:
@@ -295,50 +458,32 @@ class Main:
         script_manager.index.reindex()
         script_manager.load_all()
         script_manager.event_handler.monitor_turning_on()
-        refresh(mode=1)
         refresh_success_hashes()
         return True
 
     @staticmethod
     def turn_off() -> bool:
-        refresh(mode=3)
+        refresh()
         script_manager.event_handler.monitor_turning_off()
         return True
-
-    def get_worker(self, id_: int):
-        for i in self.workers:
-            if i.id == id_:
-                return i
-
-    def add_workers(self, count: int):
-        for i in range(count):
-            self.workers.append(Worker(self.workers_increment))
-            self.get_worker(self.workers_increment).start()
-            self.workers_increment += 1
-
-    def wait_workers(self):
-        for i in self.workers:
-            i.join(storage.worker_wait)
 
     def start(self):
         self.turn_on()
 
-        self.collector.start()
-        self.add_workers(storage.workers_count)
+        self.thread_manager.start()
 
         script_manager.event_handler.monitor_turned_on()
 
         try:
-            while self.collector.is_alive():
+            while self.thread_manager.is_alive():
                 time.sleep(1)
-            self.log.fatal(MonitorError('Collector unexpectedly has turned off'))
+            self.log.fatal(MonitorError('ThreadManager unexpectedly has turned off'))
         except KeyboardInterrupt:
             self.log.info('Signal Interrupt!')
         finally:
             self.log.info('Turning off...')
             self.turn_off()
-            self.wait_workers()
-            self.collector.join(storage.collector_wait)
+            self.thread_manager.join(self.thread_manager.close())
             self.log.info('Saving success hashes')
             cache.dump_success_hashes(success_hashes)
             self.log.info('Saving success hashes complete')
