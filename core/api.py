@@ -1,6 +1,6 @@
-from abc import ABC, abstractmethod
+import abc
+import hashlib
 from dataclasses import dataclass, field
-from hashlib import sha1
 from typing import Tuple, TypeVar, List, Any, Union, Dict
 
 from .logger import Logger
@@ -73,7 +73,7 @@ class Result:
 # Indexing
 
 
-class Index(ABC):
+class Index(abc.ABC):
     pass
 
 
@@ -97,7 +97,7 @@ class IInterval(Index):
 
 
 @dataclass
-class Target(ABC):
+class Target(abc.ABC):
     name: str
     script: str
     data: Any
@@ -112,7 +112,7 @@ class Target(ABC):
         return self.reused
 
     def content_hash(self) -> int:
-        return int(sha1(
+        return int(hashlib.sha1(
             self.script.encode() + self.data.__repr__().encode() + self.name.encode()
         ).hexdigest(), 16)
 
@@ -125,7 +125,7 @@ class TInterval(Target):
     interval: int
 
     def hash(self) -> int:
-        return int(sha1(
+        return int(hashlib.sha1(
             self.script.encode() + self.data.__repr__().encode() + str(self.interval).encode() + self.name.encode()
         ).hexdigest(), 16)
 
@@ -138,7 +138,7 @@ class TScheduled(Target):
     timestamp: float
 
     def hash(self) -> int:
-        return int(sha1(
+        return int(hashlib.sha1(
             self.script.encode() + self.data.__repr__().encode() + str(self.timestamp).encode() + self.name.encode()
         ).hexdigest(), 16)
 
@@ -153,7 +153,7 @@ class TSmart(Target):
     timestamp: float
 
     def hash(self) -> int:
-        return int(sha1(
+        return int(hashlib.sha1(
             self.script.encode() + self.data.__repr__().encode() + str(self.length).encode() +
             str(self.scatter).encode() + str(self.timestamp).encode() + self.name.encode()
         ).hexdigest(), 16)
@@ -165,7 +165,7 @@ class TSmart(Target):
 # Status classes
 
 
-class Status(ABC):
+class Status(abc.ABC):
     pass
 
 
@@ -195,25 +195,25 @@ class SFail(Status):
 # Parser classes
 
 
-class Parser(ABC):  # Class to implement parsers
+class Parser(abc.ABC):  # Class to implement parsers
     def __init__(self, name: str, log: Logger):
         self.name = name
         self.log = log
 
-    @abstractmethod
+    @abc.abstractmethod
     def index(self) -> IndexType: ...
 
-    @abstractmethod
+    @abc.abstractmethod
     def targets(self) -> List[TargetType]: ...  # TODO: Fix this annotation
 
-    @abstractmethod
+    @abc.abstractmethod
     def execute(self, target: TargetType) -> StatusType: ...
 
 
 # Event classes
 
 
-class EventsExecutor(ABC):
+class EventsExecutor(abc.ABC):
     def __init__(self, name: str, log: Logger):
         self.name = name
         self.log = log

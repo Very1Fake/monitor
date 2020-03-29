@@ -21,6 +21,8 @@ target_queue_size: 512
 targets_hashes_size: 1024
 task_queue_put_wait: 8
 task_queue_size: 512
+thread_manager_tick: 1
 worker_tick: 1
 worker_wait: 5
 workers_count: 3
+workers_proportion: 1.5
