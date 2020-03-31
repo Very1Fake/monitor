@@ -69,11 +69,25 @@ class Logger:
             return True
         return False
 
+    def fatal_msg(self, msg: str) -> bool:
+        if storage.log_mode == 1 or storage.log_mode == 3:
+            print(colored(
+                f"[{lib.get_time(storage.log_utc_time)}] [FATAL] [{self.name}]: {msg}",
+                'red',
+                attrs=['reverse']
+            ))
+        if storage.log_mode == 2 or storage.log_mode == 3:
+            log_file.write(f"[{lib.get_time(storage.log_utc_time)}] [FATAL] [{self.name}]: {msg}\n")
+            log_file.flush()
+        return True
+
     def fatal(self, e: Exception, from_: Exception = None):
         if storage.log_mode == 1 or storage.log_mode == 3:
             print(colored(
                 f"[{lib.get_time(storage.log_utc_time)}] [FATAL] [{self.name}]:   "
-                f"{e.__class__.__name__}: {e.__str__()}", 'red', attrs=['reverse']
+                f"{e.__class__.__name__}: {e.__str__()}",
+                'red',
+                attrs=['reverse']
             ))
         if storage.log_mode == 2 or storage.log_mode == 3:
             log_file.write(f"[{lib.get_time(storage.log_utc_time)}] [FATAL] [{self.name}]:   "
