@@ -24,11 +24,12 @@ class EventsExecutorError(Exception):
 # Result classes
 
 
-PriceType = TypeVar('PriceType', Tuple[int, Union[float, int]], Tuple[int, Union[float, int], Union[float, int]])
-SizeType = TypeVar('SizeType', Tuple, Tuple[str], Tuple[str, str])
-FooterType = TypeVar('FooterType', Tuple, Tuple[str, str])
+PriceType = TypeVar('PriceType', Tuple[int, float], Tuple[int, float, float])
+SizeType = TypeVar('SizeType', Tuple, Tuple[str], Tuple[Tuple[str]])
+FooterType = TypeVar('FooterType', Tuple, Tuple[str])
 
 currencies = {
+    'yuan': 4,
     'ruble': 3,
     'euro': 2,
     'dollar': 1,
@@ -62,12 +63,37 @@ class Result:
             raise ValueError('description must be str')
         if not isinstance(self.price, (tuple, list)):
             raise ValueError('price must be tuple or list')
+        else:
+            if (self.price.__len__() < 2 or not isinstance(self.price[0], int) or
+                not isinstance(self.price[1], (int, float))) or \
+                    (self.price.__len__() == 3 and not isinstance(self.price[2], (int, float))):
+                raise ValueError('price must be tuple with (int, [int, float], *[int, float])')
         if not isinstance(self.fields, dict):
             raise ValueError('fields must be dict')
+        else:
+            for i in self.fields:
+                if not isinstance(i, str):
+                    raise KeyError('all keys in fields must be str')
+            for i in self.fields.values():
+                if not isinstance(i, (str, int, float)):
+                    raise ValueError('all values in fields must be str, int or float')
         if not isinstance(self.sizes, (tuple, list)):
             raise ValueError('sizes must be tuple or list')
+        else:
+            for i in self.sizes:
+                if not isinstance(i, (str, tuple, list)) or \
+                        (
+                                isinstance(i, (tuple, list)) and
+                                i.__len__() < 2 or not isinstance(i[0], str) or not isinstance(i[1], str)
+                        ):
+                    raise ValueError('sizes must contain tuple of tuples of str, tuple of str or be empty')
         if not isinstance(self.footer, (tuple, list)):
             raise ValueError('footer must be tuple or list')
+        else:
+            for i in self.footer:
+                if i.__len__() == 0 or (i.__len__() == 1 and not isinstance(i[0], str)) or \
+                        (i.__len__() == 2 and not isinstance(i[1], str)):
+                    raise ValueError('footer item must be tuple with (str, *str)')
 
 
 # Indexing
