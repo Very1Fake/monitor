@@ -1,7 +1,7 @@
 import queue
 import threading
 import time
-from typing import Tuple, List, Dict
+from typing import Tuple, Dict
 
 from . import api
 from . import cache
