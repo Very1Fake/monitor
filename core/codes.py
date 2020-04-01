@@ -42,7 +42,15 @@ class Code:
         self.message = message
 
     def __str__(self) -> str:
-        return f'({self.digest.hex()}) {self.title}'
+        return f'C{self.code}'
 
     def __repr__(self) -> str:
-        return f'Code({self.digest.hex()}, {self.title})'
+        return f'Code({self.code}, {self.digest}, {self.title})'
+
+    def format(self, mode: int = 1) -> str:
+        if mode == 1 and self.message:
+            return f'C{self.code}: {self.message}'
+        elif mode == 2:
+            return f'C{self.code} {self.title}' + (f': {self.message}' if self.message else '')
+        else:
+            return f'C{self.code}'
