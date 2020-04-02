@@ -130,7 +130,7 @@ class IInterval(Index):
 class Target(abc.ABC):
     name: str
     script: str
-    data: Any
+    data: Any = field(repr=False)
     reused: int = field(init=False, default=-1)
 
     def reuse(self, max_: int) -> int:

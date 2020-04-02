@@ -127,36 +127,36 @@ def change_level(level: int):
     log = Logger('Logger')
     if level in (0, 1, 2, 3, 4, 5):
         if storage.log_level == level:
-            log.warn('Meaningless level change (changing to the same value)')
+            log.warn(codes.Code(38001))
         else:
-            log.info(f'Level changed from {storage.log_level} to {level}')
+            log.info(codes.Code(28001, f'From {storage.log_level} to {level}'))
             storage.log_level = level
     else:
         if storage.production:
-            log.error('Can\'t change level (possible values (0, 1, 2, 3, 4, 5))')
+            log.error(codes.Code(48001))
         else:
-            log.fatal(LoggerError('Can\'t change level (possible values (0, 1, 2, 3, 4, 5))'))
+            log.fatal(LoggerError(codes.Code(48001)))
 
 
 def change_mode(mode: int):
     log = Logger('Logger')
     if mode in (0, 1, 2, 3):
         if storage.log_mode == mode:
-            log.warn('Meaningless mode change (changing to the same value)')
+            log.warn(codes.Code(38002))
         else:
-            log.info(f'Mode changed from {storage.log_mode} to {mode}')
+            log.info(codes.Code(28002, f'From {storage.log_mode} to {mode}'))
             storage.log_mode = mode
     else:
         if storage.production:
-            log.error('Can\'t change mode (possible values (0, 1, 2, 3))')
+            log.error(codes.Code(48002))
         else:
-            log.fatal(LoggerError('Can\'t change mode (possible values (0, 1, 2, 3))'))
+            log.fatal(LoggerError(codes.Code(48002)))
 
 
 def change_time(global_: bool):
     log = Logger('Logger')
     if storage.log_utc_time == global_:
-        log.warn('Meaningless time change (changing to the same value)')
+        log.warn(codes.Code(38003))
     else:
-        log.info(f'Time changed to {"UTC" if global_ else "local"}')
+        log.info(codes.Code(28003) if global_ else codes.Code(28004))
         storage.log_utc_time = global_
