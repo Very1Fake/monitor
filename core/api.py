@@ -29,11 +29,15 @@ SizeType = TypeVar('SizeType', Tuple, Tuple[str], Tuple[Tuple[str]])
 FooterType = TypeVar('FooterType', Tuple, Tuple[str])
 
 currencies = {
-    'yuan': 4,
-    'ruble': 3,
-    'euro': 2,
-    'dollar': 1,
-    'pound': 0
+    'PLN': 8,
+    'BYN': 7,
+    'UAH': 6,
+    'NOK': 5,
+    'CNY': 4,
+    'RUB': 3,
+    'EUR': 2,
+    'USD': 1,
+    'GBP': 0
 }
 
 
