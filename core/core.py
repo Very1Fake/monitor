@@ -1,7 +1,7 @@
 import queue
 import threading
 import time
-from typing import Tuple, Dict
+from typing import Tuple, Dict, Union
 
 from . import api
 from . import cache
@@ -79,15 +79,10 @@ class Collector(threading.Thread):
         else:
             ValueError('state must be int')
 
-    def throw(self, message, description: str = '') -> None:
-        if storage.production:
-            if self.log.error(message):
-                script_manager.event_handler.error(description + '\n' + message if description else message, self.name)
-        else:
-            script_manager.event_handler.fatal(CollectorError(
-                description + '\n' + message if description else message
-            ), self.name)
-            self.log.fatal(CollectorError(message))
+    def throw(self, code: codes.Code) -> None:
+        script_manager.event_handler.alert(code, self.name)
+        if not storage.production:
+            self.log.fatal(CollectorError(code))
 
     def insert_index(self, index: api.IndexType, now: float, force: bool = False) -> None:
         if isinstance(index, api.IOnce):
@@ -201,10 +196,7 @@ class Collector(threading.Thread):
                     self.step_target_queue_check()
                     self.step_send_tasks()
                 except Exception as e:
-                    self.throw(
-                        f'While working: {e.__class__.__name__}: {e.__str__()}',
-                        f'Collector unexpectedly turned off'
-                    )
+                    self.throw(codes.Code(53001, f'While working: {e.__class__.__name__}: {e.__str__()}'))
                     break
             elif self.state == 2:  # Pausing state
                 self.log.info(codes.Code(20002))
@@ -252,15 +244,10 @@ class Worker(threading.Thread):
         else:
             ValueError('state must be int')
 
-    def throw(self, message, description: str = '') -> None:
-        if storage.production:
-            if self.log.error(message):
-                script_manager.event_handler.error(description + '\n' + message if description else message, self.name)
-        else:
-            script_manager.event_handler.fatal(WorkerError(
-                description + '\n' + message if description else message
-            ), self.name)
-            self.log.fatal(WorkerError(message))
+    def throw(self, code: codes.Code) -> None:
+        script_manager.event_handler.alert(code, self.name)
+        if not storage.production:
+            self.log.fatal(WorkerError(code))
 
     def execute(self, target: api.TargetType) -> bool:
         self.log.debug(codes.Code(14001, target))
@@ -310,10 +297,7 @@ class Worker(threading.Thread):
                     if target:
                         self.execute(target.content)
                 except Exception as e:
-                    self.throw(
-                        f'While working: {e.__class__.__name__}: {e.__str__()}',
-                        f'{self.name} unexpectedly turned off'
-                    )
+                    self.throw(codes.Code(54001, f'While working: {e.__class__.__name__}: {e.__str__()}'))
                     break
             elif self.state == 2:  # Pausing state
                 self.log.info(codes.Code(20002))
@@ -345,15 +329,10 @@ class ThreadManager(threading.Thread):
         self.workers = {}
         self.collector = None
 
-    def throw(self, message, description: str = '') -> None:
-        if storage.production:
-            if self.log.error(message):
-                script_manager.event_handler.error(description + '\n' + message if description else message, self.name)
-        else:
-            script_manager.event_handler.fatal(ThreadManagerError(
-                description + '\n' + message if description else message
-            ), self.name)
-            self.log.fatal(ThreadManagerError(message))
+    def throw(self, code: codes.Code) -> None:
+        script_manager.event_handler.alert(code, self.name)
+        if not storage.production:
+            self.log.fatal(ThreadManagerError(code))
 
     def workers_count(self, additional: bool = False) -> int:
         count = 0
@@ -371,21 +350,21 @@ class ThreadManager(threading.Thread):
                 self.collector.start()
                 self.log.info(codes.Code(22002))
             except RuntimeError:
-                self.log.error(codes.Code(22003))
+                self.log.warn(codes.Code(32001))
                 self.collector = None
 
     def check_workers(self) -> None:
         if self.workers_count() < storage.workers_count:
-            self.workers[self.workers_increment_id] = Worker(self.workers.__len__())
+            self.workers[self.workers_increment_id] = Worker(self.workers_increment_id)
             self.log.info(codes.Code(22004, f'Worker-{self.workers_increment_id}'))
             self.workers_increment_id += 1
-        for v in self.workers.values():  # TODO: Fix here
+        for v in tuple(self.workers.values()):
             if not v.is_alive():
                 try:
                     v.start()
                     self.log.info(codes.Code(22005, f'{v.name}'))
                 except RuntimeError:
-                    self.log.error(codes.Code(22006, f'{v.name}'))
+                    self.log.warn(codes.Code(32002, f'{v.name}'))
                     del self.workers[v.id]
 
     def stop_threads(self) -> None:
@@ -421,10 +400,7 @@ class ThreadManager(threading.Thread):
             except Exception as e:
                 self.log.fatal_msg(codes.Code(52001, f'{e.__class__.__name__}: {e.__str__()}'))
                 self.stop_threads()
-                self.throw(
-                    f'While working: {e.__class__.__name__}: {e.__str__()}',
-                    f'ThreadManager unexpectedly turned off'
-                )
+                self.throw(codes.Code(52001, f'While working: {e.__class__.__name__}: {e.__str__()}'))
                 break
 
     def close(self) -> float:

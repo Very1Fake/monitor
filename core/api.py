@@ -3,6 +3,7 @@ import hashlib
 from dataclasses import dataclass, field
 from typing import Tuple, TypeVar, List, Any, Union, Dict
 
+from . import codes
 from .logger import Logger
 
 
@@ -256,9 +257,7 @@ class EventsExecutor(abc.ABC):
 
     def e_monitor_turned_off(self) -> None: ...
 
-    def e_error(self, message: str, thread: str) -> None: ...
-
-    def e_fatal(self, e: Exception, thread: str) -> None: ...
+    def e_alert(self, code: codes.Code, thread: str) -> None: ...
 
     def e_success_status(self, status: SSuccess) -> None: ...
 

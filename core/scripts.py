@@ -265,11 +265,8 @@ class EventHandler:  # TODO: unload protection
     def monitor_turned_off(self) -> None:
         self.exec('e_monitor_turned_off', ())
 
-    def error(self, message: str, thread: str) -> None:
-        self.exec('e_error', (message, thread))
-
-    def fatal(self, e: Exception, thread: str) -> None:
-        self.exec('e_fatal', (e, thread))
+    def alert(self, code: codes.Code, thread: str) -> None:
+        self.exec('e_alert', (code, thread))
 
     def success_status(self, status: api.SSuccess) -> None:
         self.exec('e_success_status', (status,))

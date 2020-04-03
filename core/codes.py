@@ -19,10 +19,8 @@ _21005 = 'Saving success hashes complete'
 _21006 = 'Offline'
 _22001 = 'Collector initialized'
 _22002 = 'Collector started'
-_22003 = 'Collector was unexpectedly stopped'
-_22004 = 'Worker initialized'
-_22005 = 'Worker started'
-_22006 = 'Worker was unexpectedly stopped'
+_22003 = 'Worker initialized'
+_22004 = 'Worker started'
 _23001 = 'Reindexing parsers started'
 _23002 = 'Reindexing parsers complete'
 _24001 = 'Item available'
@@ -50,6 +48,8 @@ _28003 = 'Time changed to UTC'
 _28004 = 'Time changed to local'
 
 # Warnings (3xxxx)
+_32001 = 'Collector was unexpectedly stopped'
+_32002 = 'Worker was unexpectedly stopped'
 _33001 = 'Target lost while inserting in schedule'
 _34001 = 'Target lost'
 _34002 = 'Target lost in pipeline'
@@ -82,6 +82,8 @@ _48002 = 'Can\'t change mode (possible values (0, 1, 2, 3))'
 # Fatals (5xxxx)
 _51001 = 'ThreadManager unexpectedly has turned off'
 _52001 = 'Exception raised, emergency stop initiated'
+_53001 = 'Unexpectedly has turned off'
+_54001 = 'Unexpectedly has turned off'
 
 
 class CodeError(Exception):
@@ -97,20 +99,20 @@ class Code:
     message: str
 
     def __init__(self, code: int, message: str = ''):
-        if isinstance(code, int):
+        if isinstance(code, int) and len(str(code)) == 5:
             self.code = code
             if f'_{code}' in globals():
                 self.title = globals()[f'_{code}']
             else:
                 raise CodeError('Code does not exist')
         else:
-            raise CodeError('Code must be int')
+            raise CodeError('Code must be int in range (10000 - 65535)')
         self.digest = struct.pack('>H', code)
         self.hexdigest = hex(code)
         self.message = message
 
     def __str__(self) -> str:
-        return self.format(1)
+        return self.format()
 
     def __repr__(self) -> str:
         return f'Code({self.code}, {self.digest}, {self.title})'
