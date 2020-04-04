@@ -1,5 +1,5 @@
-termcolor==1.1.0
 checksumdir==1.1.7
-dataclasses==0.6
 packaging==20.3
-PyYAML==5.3
+termcolor==1.1.0
+dataclasses==0.6
+PyYAML==5.3.1

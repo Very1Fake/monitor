@@ -54,6 +54,7 @@ target_queue_put_wait: float = 8
 log_level: int = 4  # (5 - Test, 4 - Debug, 3 - Info, 2 - Warn, 1 - Error, 0 - Fatal)
 log_mode: int = 1  # (0 - off, 1 - Console only, 2 - File only, 3 - Console & File)
 log_utc_time: bool = True  # (True - UTC (Coordinated Universal Time), False - local time)
+log_message_content: int = 1  # (0 - Only code, 1 - Code & Message, 2 - Code & Title & Message
 
 # API
 priority_TSmart: list = [10, 0]

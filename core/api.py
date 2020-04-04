@@ -3,6 +3,7 @@ import hashlib
 from dataclasses import dataclass, field
 from typing import Tuple, TypeVar, List, Any, Union, Dict
 
+from . import codes
 from .logger import Logger
 
 
@@ -29,11 +30,15 @@ SizeType = TypeVar('SizeType', Tuple, Tuple[str], Tuple[Tuple[str]])
 FooterType = TypeVar('FooterType', Tuple, Tuple[str])
 
 currencies = {
-    'yuan': 4,
-    'ruble': 3,
-    'euro': 2,
-    'dollar': 1,
-    'pound': 0
+    'PLN': 8,
+    'BYN': 7,
+    'UAH': 6,
+    'NOK': 5,
+    'CNY': 4,
+    'RUB': 3,
+    'EUR': 2,
+    'USD': 1,
+    'GBP': 0
 }
 
 
@@ -126,7 +131,7 @@ class IInterval(Index):
 class Target(abc.ABC):
     name: str
     script: str
-    data: Any
+    data: Any = field(repr=False)
     reused: int = field(init=False, default=-1)
 
     def reuse(self, max_: int) -> int:
@@ -252,9 +257,7 @@ class EventsExecutor(abc.ABC):
 
     def e_monitor_turned_off(self) -> None: ...
 
-    def e_error(self, message: str, thread: str) -> None: ...
-
-    def e_fatal(self, e: Exception, thread: str) -> None: ...
+    def e_alert(self, code: codes.Code, thread: str) -> None: ...
 
     def e_success_status(self, status: SSuccess) -> None: ...
 

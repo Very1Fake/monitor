@@ -5,12 +5,14 @@ from typing import Tuple, Dict
 
 from . import api
 from . import cache
+from . import codes
 from . import library
 from . import logger
 from . import scripts
 from . import storage
 
 # TODO: Success hashes object
+# TODO: throw() for state setters
 
 
 config_file = 'core/config.yaml'
@@ -77,15 +79,10 @@ class Collector(threading.Thread):
         else:
             ValueError('state must be int')
 
-    def throw(self, message, description: str = '') -> None:
-        if storage.production:
-            if self.log.error(message):
-                script_manager.event_handler.error(description + '\n' + message if description else message, self.name)
-        else:
-            script_manager.event_handler.fatal(CollectorError(
-                description + '\n' + message if description else message
-            ), self.name)
-            self.log.fatal(CollectorError(message))
+    def throw(self, code: codes.Code) -> None:
+        script_manager.event_handler.alert(code, self.name)
+        if not storage.production:
+            self.log.fatal(CollectorError(code))
 
     def insert_index(self, index: api.IndexType, now: float, force: bool = False) -> None:
         if isinstance(index, api.IOnce):
@@ -95,9 +92,9 @@ class Collector(threading.Thread):
             self.schedule_indices[now + (0 if force else index.interval)] = index
         else:
             if storage.production:
-                self.log.error(f'Unknown index "{index}"')
+                self.log.error(codes.Code(43001, index))
             else:
-                self.log.fatal(CollectorError(f'Unknown index "{index}"'))
+                self.log.fatal(CollectorError(codes.Code(43001, index)))
 
     def insert_target(self, target):
         if not isinstance(target, (tuple, list)):
@@ -119,24 +116,21 @@ class Collector(threading.Thread):
                     elif isinstance(i, api.TInterval):
                         self.schedule_targets[time.time() + i.interval] = i
                 except ValueError:
-                    if storage.production:
-                        self.log.warn(f'Target lost while inserting: {i}')
-                    else:
-                        self.log.fatal(CollectorError(f'Target lost while inserting: {i}'))
+                    self.log.warn(codes.Code(33001, i))
                 except IndexError:
                     self.log.test(f'Inserting non-unique target')
 
     def step_parsers_check(self) -> None:
         if script_manager.hash() != self.parsers_hash:
-            self.log.info('Reindexing parsers')
+            self.log.info(codes.Code(23001))
             for i in script_manager.parsers:
                 ok, index = script_manager.execute_parser(i, 'index', ())
                 if ok:
                     self.insert_index(index, time.time(), True)
                 else:
-                    self.log.error(f'Parser execution failed {i}')
+                    self.log.error(codes.Code(43002, i))
             self.parsers_hash = script_manager.hash()
-            self.log.info('Reindexing parsers complete')
+            self.log.info(codes.Code(23002))
 
     def step_reindex(self) -> bool:
         try:
@@ -144,18 +138,18 @@ class Collector(threading.Thread):
             ok, targets = script_manager.execute_parser(index.script, 'targets', ())
             if ok:
                 if isinstance(targets, (tuple, list)):
-                    self.log.debug(f'{len(targets)} targets received from "{index.script}"')
+                    self.log.debug(codes.Code(13001, f'{len(targets)}, {index.script}'))
                     self.insert_target(targets)
                 else:
                     if storage.production:
-                        self.log.error(f'Wrong target list received from "{index.script}"')
+                        self.log.error(codes.Code(43002, index.script))
                     else:
-                        self.log.fatal(CollectorError(f'Wrong target list received from "{index.script}"'))
+                        self.log.fatal(CollectorError((codes.Code(43002, index.script))))
                 self.insert_index(index, time.time())
                 self.schedule_indices.pop_item(id_)
                 return True
             else:
-                self.log.error(f'Parser execution failed {index.script}')
+                self.log.error(codes.Code(43003, index.script))
                 return False
         except StopIteration:
             return False
@@ -183,13 +177,10 @@ class Collector(threading.Thread):
                         else:
                             priority = 1001
                         task_queue.put(library.PrioritizedItem(priority, v), timeout=storage.task_queue_put_wait)
-                    except queue.Full as e:
-                        if storage.production:
-                            self.log.error(f'Target lost in pipeline: {v}')
-                        else:
-                            self.log.fatal(CollectorError(f'Target lost in pipeline: {v}'), e)
+                    except queue.Full:
+                        self.log.warn(codes.Code(33002, v))
                 else:
-                    self.log.error(f'Target lost in pipeline (script unloaded): {v}')
+                    self.log.error(codes.Code(43004, v))
                 ids += (k,)
             self.schedule_targets.pop_item(ids)
 
@@ -205,21 +196,18 @@ class Collector(threading.Thread):
                     self.step_target_queue_check()
                     self.step_send_tasks()
                 except Exception as e:
-                    self.throw(
-                        f'While working: {e.__class__.__name__}: {e.__str__()}',
-                        f'Collector unexpectedly turned off'
-                    )
+                    self.throw(codes.Code(53001, f'While working: {e.__class__.__name__}: {e.__str__()}'))
                     break
             elif self.state == 2:  # Pausing state
-                self.log.info('Thread paused')
+                self.log.info(codes.Code(20002))
                 self.state = 3
             elif self.state == 3:  # Paused state
                 pass
             elif self.state == 4:  # Resuming state
-                self.log.info('Thread resumed')
+                self.log.info(codes.Code(20003))
                 self.state = 1
             elif self.state == 5:  # Stopping state
-                self.log.info('Thread closed')
+                self.log.info(codes.Code(20005))
                 break
             delta: float = time.time() - start
             time.sleep(storage.collector_tick - delta if storage.collector_tick - delta >= 0 else 0)
@@ -256,52 +244,44 @@ class Worker(threading.Thread):
         else:
             ValueError('state must be int')
 
-    def throw(self, message, description: str = '') -> None:
-        if storage.production:
-            if self.log.error(message):
-                script_manager.event_handler.error(description + '\n' + message if description else message, self.name)
-        else:
-            script_manager.event_handler.fatal(WorkerError(
-                description + '\n' + message if description else message
-            ), self.name)
-            self.log.fatal(WorkerError(message))
+    def throw(self, code: codes.Code) -> None:
+        script_manager.event_handler.alert(code, self.name)
+        if not storage.production:
+            self.log.fatal(WorkerError(code))
 
     def execute(self, target: api.TargetType) -> bool:
-        self.log.debug(f'Executing: {target}')
+        self.log.debug(codes.Code(14001, target))
         if target.content_hash() not in success_hashes.values():  # TODO: Optimize here
             try:
                 ok, status = script_manager.execute_parser(target.script, 'execute', (target,))
                 if ok:
                     if isinstance(status, api.SWaiting):
-                        self.log.debug(f'Result: {status}')
+                        self.log.debug(codes.Code(14002, status))
                         try:
                             target_queue.put(status.target, timeout=storage.target_queue_put_wait)
-                        except queue.Full as e:
-                            if storage.production:
-                                self.log.error(f'Target lost in pipeline: {status.target}')
-                            else:
-                                self.log.fatal(WorkerError(f'Target lost in pipeline: {status.target}'), e)
+                        except queue.Full:
+                            self.log.warn(codes.Code(34002, status.target))
                     elif isinstance(status, api.SSuccess):
-                        self.log.info(f'Item now available: {status.result}')
+                        self.log.info(codes.Code(24001, status.result))
                         success_hashes[time.time() + storage.success_hashes_time] = target.content_hash()
                         script_manager.event_handler.success_status(status)
                     elif isinstance(status, api.SFail):
-                        self.log.warn(f'Target lost: {status}')
+                        self.log.warn(codes.Code(34001, status))
                         script_manager.event_handler.fail_status(status)
                         return False
                     else:
-                        self.log.debug(f'Result: {status}')
+                        self.log.debug(codes.Code(14002, status))
                         if storage.production:
-                            self.log.error(f'Unknown status received while executing: {target}')
+                            self.log.error(codes.Code(44001, target))
                         else:
-                            self.log.fatal(CollectorError(f'Unknown status received while executing: {target}'))
+                            self.log.fatal(CollectorError(codes.Code(44001, target)))
                         return True
                     return True
                 else:
-                    self.log.error(f'Parser execution failed "{target}"')
+                    self.log.error(codes.Code(44002, target))
                     return False
             except scripts.ScriptManagerError:
-                self.log.error(f'Target lost in pipeline (script unloaded): {target}')
+                self.log.error(codes.Code(44003, target))
 
     def run(self) -> None:
         self.state = 1
@@ -317,21 +297,18 @@ class Worker(threading.Thread):
                     if target:
                         self.execute(target.content)
                 except Exception as e:
-                    self.throw(
-                        f'While working: {e.__class__.__name__}: {e.__str__()}',
-                        f'{self.name} unexpectedly turned off'
-                    )
+                    self.throw(codes.Code(54001, f'While working: {e.__class__.__name__}: {e.__str__()}'))
                     break
             elif self.state == 2:  # Pausing state
-                self.log.info('Thread paused')
+                self.log.info(codes.Code(20002))
                 self.state = 3
             elif self.state == 3:  # Paused state
                 pass
             elif self.state == 4:  # Resuming state
-                self.log.info('Thread resumed')
+                self.log.info(codes.Code(20003))
                 self.state = 1
             elif self.state == 5:  # Stopping state
-                self.log.info('Thread closed')
+                self.log.info(codes.Code(20005))
                 break
             delta: float = time.time() - start
             time.sleep(storage.worker_tick - delta if storage.worker_tick - delta >= 0 else 0)
@@ -352,15 +329,10 @@ class ThreadManager(threading.Thread):
         self.workers = {}
         self.collector = None
 
-    def throw(self, message, description: str = '') -> None:
-        if storage.production:
-            if self.log.error(message):
-                script_manager.event_handler.error(description + '\n' + message if description else message, self.name)
-        else:
-            script_manager.event_handler.fatal(ThreadManagerError(
-                description + '\n' + message if description else message
-            ), self.name)
-            self.log.fatal(ThreadManagerError(message))
+    def throw(self, code: codes.Code) -> None:
+        script_manager.event_handler.alert(code, self.name)
+        if not storage.production:
+            self.log.fatal(ThreadManagerError(code))
 
     def workers_count(self, additional: bool = False) -> int:
         count = 0
@@ -372,27 +344,27 @@ class ThreadManager(threading.Thread):
     def check_collector(self) -> None:
         if not self.collector:
             self.collector = Collector()
-            self.log.info('Collector initialized')
+            self.log.info(codes.Code(22001))
         if not self.collector.is_alive():
             try:
                 self.collector.start()
-                self.log.info('Collector started')
+                self.log.info(codes.Code(22002))
             except RuntimeError:
-                self.log.error('Collector was unexpectedly stopped')
+                self.log.warn(codes.Code(32001))
                 self.collector = None
 
     def check_workers(self) -> None:
         if self.workers_count() < storage.workers_count:
-            self.workers[self.workers_increment_id] = Worker(self.workers.__len__())
-            self.log.info(f'Worker-{self.workers_increment_id} initialized')
+            self.workers[self.workers_increment_id] = Worker(self.workers_increment_id)
+            self.log.info(codes.Code(22003, f'Worker-{self.workers_increment_id}'))
             self.workers_increment_id += 1
-        for v in self.workers.values():
+        for v in tuple(self.workers.values()):
             if not v.is_alive():
                 try:
                     v.start()
-                    self.log.info(f'{v.name} started')
+                    self.log.info(codes.Code(22004, f'{v.name}'))
                 except RuntimeError:
-                    self.log.error(f'{v.name} was unexpectedly stopped')
+                    self.log.warn(codes.Code(32002, f'{v.name}'))
                     del self.workers[v.id]
 
     def stop_threads(self) -> None:
@@ -411,27 +383,24 @@ class ThreadManager(threading.Thread):
                     self.check_collector()
                     self.check_workers()
                 elif self.state == 2:  # Pausing state
-                    self.log.info('Thread paused')
+                    self.log.info(codes.Code(20002))
                     self.state = 3
                 elif self.state == 3:  # Paused state
                     pass
                 elif self.state == 4:  # Resuming state
-                    self.log.info('Thread resumed')
+                    self.log.info(codes.Code(20003))
                     self.state = 1
                 elif self.state == 5:  # Stopping state
-                    self.log.info('Thread closing')
+                    self.log.info(codes.Code(20004))
                     self.stop_threads()
-                    self.log.info('Thread closed')
+                    self.log.info(codes.Code(20005))
                     break
                 delta: float = time.time() - start
                 time.sleep(storage.thread_manager_tick - delta if storage.thread_manager_tick - delta >= 0 else 0)
             except Exception as e:
-                self.log.fatal_msg(f'Exception raised, emergency stop initiated. {e.__class__.__name__}: {e.__str__()}')
+                self.log.fatal_msg(codes.Code(52001, f'{e.__class__.__name__}: {e.__str__()}'))
                 self.stop_threads()
-                self.throw(
-                    f'While working: {e.__class__.__name__}: {e.__str__()}',
-                    f'ThreadManager unexpectedly turned off'
-                )
+                self.throw(codes.Code(52001, f'While working: {e.__class__.__name__}: {e.__str__()}'))
                 break
 
     def close(self) -> float:
@@ -454,7 +423,7 @@ class Main:
 
     def turn_on(self) -> bool:
         if storage.production:
-            self.log.info('Production mode enabled!')
+            self.log.info(codes.Code(21001))
         script_manager.index.reindex()
         script_manager.load_all()
         script_manager.event_handler.monitor_turning_on()
@@ -477,17 +446,17 @@ class Main:
         try:
             while self.thread_manager.is_alive():
                 time.sleep(1)
-            self.log.fatal(MonitorError('ThreadManager unexpectedly has turned off'))
+            self.log.fatal(MonitorError(codes.Code(51001)))
         except KeyboardInterrupt:
-            self.log.info('Signal Interrupt!')
+            self.log.info(codes.Code(21002))
         finally:
-            self.log.info('Turning off...')
+            self.log.info(codes.Code(21003))
             self.turn_off()
             self.thread_manager.join(self.thread_manager.close())
-            self.log.info('Saving success hashes')
+            self.log.info(codes.Code(21004))
             cache.dump_success_hashes(success_hashes)
-            self.log.info('Saving success hashes complete')
+            self.log.info(codes.Code(21005))
             script_manager.event_handler.monitor_turned_off()
             script_manager.unload_all()
             script_manager.del_()
-            self.log.info('Done')
+            self.log.info(codes.Code(21006))
