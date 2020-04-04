@@ -1,7 +1,7 @@
 import queue
 import threading
 import time
-from typing import Tuple, Dict, Union
+from typing import Tuple, Dict
 
 from . import api
 from . import cache
@@ -356,13 +356,13 @@ class ThreadManager(threading.Thread):
     def check_workers(self) -> None:
         if self.workers_count() < storage.workers_count:
             self.workers[self.workers_increment_id] = Worker(self.workers_increment_id)
-            self.log.info(codes.Code(22004, f'Worker-{self.workers_increment_id}'))
+            self.log.info(codes.Code(22003, f'Worker-{self.workers_increment_id}'))
             self.workers_increment_id += 1
         for v in tuple(self.workers.values()):
             if not v.is_alive():
                 try:
                     v.start()
-                    self.log.info(codes.Code(22005, f'{v.name}'))
+                    self.log.info(codes.Code(22004, f'{v.name}'))
                 except RuntimeError:
                     self.log.warn(codes.Code(32002, f'{v.name}'))
                     del self.workers[v.id]
