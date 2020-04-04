@@ -1,29 +1,36 @@
-cache_folder: .cache
-collector_tick: 0.5
-collector_wait: 10
-log_level: 4
-log_message_content: 1
-log_mode: 1
-log_utc_time: yes
-logs_folder: logs
-priority_TInterval:
-  - 100
-  - 100
-priority_TScheduled:
-  - 50
-  - 0
-priority_TSmart:
-  - 10
-  - 0
-production: no
-success_hashes_time: 172800
-target_queue_put_wait: 8
-target_queue_size: 512
-targets_hashes_size: 1024
-task_queue_put_wait: 8
-task_queue_size: 512
-thread_manager_tick: 1
-worker_tick: 1
-worker_wait: 5
-workers_count: 3
-workers_proportion: 1.5
+api:
+  priority_TInterval:
+    - 100
+    - 100
+  priority_TScheduled:
+    - 50
+    - 0
+  priority_TSmart:
+    - 10
+    - 0
+collector:
+  collector_tick: 0.5
+  collector_wait: 10
+  success_hashes_time: 172800
+  targets_hashes_size: 1024
+logger:
+  log_level: 4
+  log_message_content: 1
+  log_mode: 1
+  log_utc_time: true
+main:
+  cache_path: .cache
+  logs_path: logs
+  production: false
+queues:
+  target_queue_put_wait: 8
+  target_queue_size: 512
+  task_queue_put_wait: 8
+  task_queue_size: 512
+thread_manager:
+  thread_manager_tick: 1
+worker:
+  worker_tick: 1
+  worker_wait: 5
+  workers_count: 3
+  workers_proportion: 1.5

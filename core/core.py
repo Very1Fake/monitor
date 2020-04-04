@@ -18,8 +18,8 @@ from . import storage
 config_file = 'core/config.yaml'
 script_manager: scripts.ScriptManager = scripts.ScriptManager()
 success_hashes: library.Schedule = library.Schedule()
-task_queue: queue.PriorityQueue = queue.PriorityQueue(storage.task_queue_size)
-target_queue: queue.Queue = queue.Queue(storage.target_queue_size)
+task_queue: queue.PriorityQueue = queue.PriorityQueue(storage.queues.task_queue_size)
+target_queue: queue.Queue = queue.Queue(storage.queues.target_queue_size)
 
 
 def refresh() -> None:
@@ -58,7 +58,7 @@ class Collector(threading.Thread):
         self._state = 0
         self.log = logger.Logger(self.name)
         self.schedule_indices = library.Schedule()
-        self.schedule_targets = library.UniqueSchedule(storage.targets_hashes_size)
+        self.schedule_targets = library.UniqueSchedule(storage.collector.targets_hashes_size)
         self.parsers_hash = ''
 
     @property
@@ -81,7 +81,7 @@ class Collector(threading.Thread):
 
     def throw(self, code: codes.Code) -> None:
         script_manager.event_handler.alert(code, self.name)
-        if not storage.production:
+        if not storage.main.production:
             self.log.fatal(CollectorError(code))
 
     def insert_index(self, index: api.IndexType, now: float, force: bool = False) -> None:
@@ -91,7 +91,7 @@ class Collector(threading.Thread):
         elif isinstance(index, api.IInterval):
             self.schedule_indices[now + (0 if force else index.interval)] = index
         else:
-            if storage.production:
+            if storage.main.production:
                 self.log.error(codes.Code(43001, index))
             else:
                 self.log.fatal(CollectorError(codes.Code(43001, index)))
@@ -141,7 +141,7 @@ class Collector(threading.Thread):
                     self.log.debug(codes.Code(13001, f'{len(targets)}, {index.script}'))
                     self.insert_target(targets)
                 else:
-                    if storage.production:
+                    if storage.main.production:
                         self.log.error(codes.Code(43002, index.script))
                     else:
                         self.log.fatal(CollectorError((codes.Code(43002, index.script))))
@@ -169,14 +169,14 @@ class Collector(threading.Thread):
                 if v.script in script_manager.scripts and v.script in script_manager.parsers:
                     try:
                         if isinstance(v, api.TSmart):
-                            priority = storage.priority_TSmart[0] + v.reuse(storage.priority_TSmart[1])
+                            priority = storage.api.priority_TSmart[0] + v.reuse(storage.api.priority_TSmart[1])
                         elif isinstance(v, api.TScheduled):
-                            priority = storage.priority_TScheduled[0] + v.reuse(storage.priority_TScheduled[1])
+                            priority = storage.api.priority_TScheduled[0] + v.reuse(storage.api.priority_TScheduled[1])
                         elif isinstance(v, api.TInterval):
-                            priority = storage.priority_TInterval[0] + v.reuse(storage.priority_TInterval[1])
+                            priority = storage.api.priority_TInterval[0] + v.reuse(storage.api.priority_TInterval[1])
                         else:
                             priority = 1001
-                        task_queue.put(library.PrioritizedItem(priority, v), timeout=storage.task_queue_put_wait)
+                        task_queue.put(library.PrioritizedItem(priority, v), timeout=storage.queues.task_queue_put_wait)
                     except queue.Full:
                         self.log.warn(codes.Code(33002, v))
                 else:
@@ -210,7 +210,7 @@ class Collector(threading.Thread):
                 self.log.info(codes.Code(20005))
                 break
             delta: float = time.time() - start
-            time.sleep(storage.collector_tick - delta if storage.collector_tick - delta >= 0 else 0)
+            time.sleep(storage.collector.collector_tick - delta if storage.collector.collector_tick - delta >= 0 else 0)
 
 
 class Worker(threading.Thread):
@@ -246,7 +246,7 @@ class Worker(threading.Thread):
 
     def throw(self, code: codes.Code) -> None:
         script_manager.event_handler.alert(code, self.name)
-        if not storage.production:
+        if not storage.main.production:
             self.log.fatal(WorkerError(code))
 
     def execute(self, target: api.TargetType) -> bool:
@@ -258,12 +258,12 @@ class Worker(threading.Thread):
                     if isinstance(status, api.SWaiting):
                         self.log.debug(codes.Code(14002, status))
                         try:
-                            target_queue.put(status.target, timeout=storage.target_queue_put_wait)
+                            target_queue.put(status.target, timeout=storage.queues.target_queue_put_wait)
                         except queue.Full:
                             self.log.warn(codes.Code(34002, status.target))
                     elif isinstance(status, api.SSuccess):
                         self.log.info(codes.Code(24001, status.result))
-                        success_hashes[time.time() + storage.success_hashes_time] = target.content_hash()
+                        success_hashes[time.time() + storage.collector.success_hashes_time] = target.content_hash()
                         script_manager.event_handler.success_status(status)
                     elif isinstance(status, api.SFail):
                         self.log.warn(codes.Code(34001, status))
@@ -271,7 +271,7 @@ class Worker(threading.Thread):
                         return False
                     else:
                         self.log.debug(codes.Code(14002, status))
-                        if storage.production:
+                        if storage.main.production:
                             self.log.error(codes.Code(44001, target))
                         else:
                             self.log.fatal(CollectorError(codes.Code(44001, target)))
@@ -311,7 +311,7 @@ class Worker(threading.Thread):
                 self.log.info(codes.Code(20005))
                 break
             delta: float = time.time() - start
-            time.sleep(storage.worker_tick - delta if storage.worker_tick - delta >= 0 else 0)
+            time.sleep(storage.worker.worker_tick - delta if storage.worker.worker_tick - delta >= 0 else 0)
 
 
 class ThreadManager(threading.Thread):
@@ -331,7 +331,7 @@ class ThreadManager(threading.Thread):
 
     def throw(self, code: codes.Code) -> None:
         script_manager.event_handler.alert(code, self.name)
-        if not storage.production:
+        if not storage.main.production:
             self.log.fatal(ThreadManagerError(code))
 
     def workers_count(self, additional: bool = False) -> int:
@@ -354,7 +354,7 @@ class ThreadManager(threading.Thread):
                 self.collector = None
 
     def check_workers(self) -> None:
-        if self.workers_count() < storage.workers_count:
+        if self.workers_count() < storage.worker.workers_count:
             self.workers[self.workers_increment_id] = Worker(self.workers_increment_id)
             self.log.info(codes.Code(22003, f'Worker-{self.workers_increment_id}'))
             self.workers_increment_id += 1
@@ -370,9 +370,9 @@ class ThreadManager(threading.Thread):
     def stop_threads(self) -> None:
         for i in tuple(self.workers.values()):
             i.state = 5
-            i.join(storage.worker_wait)
+            i.join(storage.worker.worker_wait)
         self.collector.state = 5
-        self.collector.join(storage.collector_wait)
+        self.collector.join(storage.collector.collector_wait)
 
     def run(self) -> None:
         self.state = 1
@@ -396,7 +396,7 @@ class ThreadManager(threading.Thread):
                     self.log.info(codes.Code(20005))
                     break
                 delta: float = time.time() - start
-                time.sleep(storage.thread_manager_tick - delta if storage.thread_manager_tick - delta >= 0 else 0)
+                time.sleep(storage.thread_manager.thread_manager_tick - delta if storage.thread_manager.thread_manager_tick - delta >= 0 else 0)
             except Exception as e:
                 self.log.fatal_msg(codes.Code(52001, f'{e.__class__.__name__}: {e.__str__()}'))
                 self.stop_threads()
@@ -405,7 +405,7 @@ class ThreadManager(threading.Thread):
 
     def close(self) -> float:
         self.state = 5
-        return storage.collector_wait + self.workers.__len__() * (storage.worker_wait + 1)
+        return storage.collector.collector_wait + self.workers.__len__() * (storage.worker.worker_wait + 1)
 
 
 class Main:
@@ -416,13 +416,12 @@ class Main:
         global config_file
         if config_file_:
             config_file = config_file_
-        storage.check_config(config_file)
         refresh()
         self.log = logger.Logger('Core')
         self.thread_manager = ThreadManager()
 
     def turn_on(self) -> bool:
-        if storage.production:
+        if storage.main.production:
             self.log.info(codes.Code(21001))
         script_manager.index.reindex()
         script_manager.load_all()
