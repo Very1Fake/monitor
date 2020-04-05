@@ -248,7 +248,7 @@ class EventHandler:  # TODO: unload protection
             try:
                 getattr(self.executors[i], event)(*args)
             except Exception as e:
-                if storage.production:
+                if storage.main.production:
                     self.log.error(f'{e.__str__()} while executing {event} with "{i}" executor')
                 else:
                     self.log.fatal(e)
@@ -364,7 +364,7 @@ class ScriptManager:
                     self.log.info(codes.Code(25001, script['name']))
                     return True
             except ImportError as e:
-                if storage.production:
+                if storage.main.production:
                     self.log.error(codes.Code(45001, script['name']))
                 else:
                     self.log.fatal(e)
@@ -397,7 +397,7 @@ class ScriptManager:
                 if self._load(i):
                     self.log.info(codes.Code(25001, i))
             except ImportError as e:
-                if storage.production:
+                if storage.main.production:
                     self.log.error(codes.Code(45001, i))
                 else:
                     self.log.fatal(e)

@@ -1,6 +1,7 @@
 ### Monitor
 .cache/
 logs/
+reports/
 
 ### Idea
 .idea/
