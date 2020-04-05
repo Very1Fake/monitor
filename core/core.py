@@ -1,4 +1,3 @@
-import math
 import queue
 import threading
 import time
@@ -402,7 +401,8 @@ class ThreadManager(threading.Thread):
                     self.log.info(codes.Code(20005))
                     break
                 delta: float = time.time() - start
-                time.sleep(storage.thread_manager.thread_manager_tick - delta if storage.thread_manager.thread_manager_tick - delta >= 0 else 0)
+                time.sleep(storage.thread_manager.thread_manager_tick - delta if
+                           storage.thread_manager.thread_manager_tick - delta >= 0 else 0)
             except Exception as e:
                 self.log.fatal_msg(codes.Code(52001, f'{e.__class__.__name__}: {e.__str__()}'))
                 self.stop_threads()

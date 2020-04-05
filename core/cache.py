@@ -27,7 +27,10 @@ def load_success_hashes(force: bool = True) -> library.Schedule:
                     continue
             if force:
                 file.seek(0)
-        os.rename(storage.main.cache_path + '/success_hashes.cache', storage.main.cache_path + '/success_hashes.cache.old')
+        os.rename(
+            storage.main.cache_path + '/success_hashes.cache',
+            storage.main.cache_path + '/success_hashes.cache.old'
+        )
     return hashes
 
 
