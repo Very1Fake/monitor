@@ -16,11 +16,17 @@ def check_config(config_file: str) -> None:
         cache: dict = yaml.safe_load(open(config_file))
         if isinstance(cache, dict):
             different = False
-            temp_snapshot: dict = snapshot()
-            for k in temp_snapshot:
-                if k not in cache:
+            snapshot_: dict = snapshot()
+            for k, v in snapshot_.items():
+                if k not in cache or type(v) != type(cache[k]):
                     different = True
-                    cache[k] = temp_snapshot[k]
+                    cache[k] = snapshot_[k]
+                else:
+                    if isinstance(snapshot_[k], dict):
+                        for i in snapshot_[k]:
+                            if i not in cache[k]:
+                                different = True
+                                cache[k][i] = snapshot_[k][i]
             if different:
                 yaml.safe_dump(cache, open(config_file, 'w+'))
             return
@@ -49,6 +55,7 @@ class Analytics(NamedTuple):
     interval: int = 300  # Interval between report files creation (in seconds)
     datetime: bool = True  # True - all output time will presented as , False - all output time as timestamps
     datetime_format: str = '%Y-%m-%d %H:%M:%S.%f'
+    beautify: bool = False
 
 
 class ThreadManager(NamedTuple):
