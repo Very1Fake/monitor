@@ -86,12 +86,15 @@ class Result:
             raise ValueError('sizes must be tuple or list')
         else:
             for i in self.sizes:
-                if not isinstance(i, (str, tuple, list)) or \
-                        (
-                                isinstance(i, (tuple, list)) and
-                                i.__len__() < 2 or not isinstance(i[0], str) or not isinstance(i[1], str)
-                        ):
+                if not isinstance(i, (str, tuple, list)):
                     raise ValueError('sizes must contain tuple of tuples of str, tuple of str or be empty')
+                else:
+                    if isinstance(i, (tuple, list)) and \
+                            (
+                                    not i.__len__() == 2 or
+                                    (i.__len__() == 2 and not isinstance(i[0], str) or not isinstance(i[1], str))
+                            ):
+                        raise ValueError('sizes items must be tuple or list of two str')
         if not isinstance(self.footer, (tuple, list)):
             raise ValueError('footer must be tuple or list')
         else:
