@@ -1,3 +1,4 @@
+import math
 import queue
 import threading
 import time
@@ -315,7 +316,7 @@ class Worker(threading.Thread):
                 self.log.info(codes.Code(20005))
                 break
             delta: float = time.time() - start
-            self.speed = round(1 / delta, 3) if delta > .001 else 1.0
+            self.speed = round(1 / delta, 3) if delta > .001 else .001
             time.sleep(storage.worker.worker_tick - delta if storage.worker.worker_tick - delta >= 0 else 0)
 
 
