@@ -1,5 +1,5 @@
 import os
-from typing import NamedTuple, Iterable, Tuple, Any
+from typing import NamedTuple
 
 import yaml
 
@@ -97,7 +97,6 @@ class API(NamedTuple):
 
 
 categories: tuple = ('Main', 'Analytics', 'ThreadManager', 'Collector', 'Worker', 'Queues', 'Logger', 'API')
-
 
 # Global variables
 main: Main = Main()
