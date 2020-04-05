@@ -3,6 +3,7 @@ import threading
 import time
 from typing import Tuple, Dict
 
+from . import analytics
 from . import api
 from . import cache
 from . import codes
@@ -436,6 +437,7 @@ class Main:
         return True
 
     def start(self):
+        analytics.analytics.dump(0)
         self.turn_on()
 
         self.thread_manager.start()
@@ -456,6 +458,7 @@ class Main:
             cache.dump_success_hashes(success_hashes)
             self.log.info(codes.Code(21005))
             script_manager.event_handler.monitor_turned_off()
+            analytics.analytics.stop()
             script_manager.unload_all()
             script_manager.del_()
             self.log.info(codes.Code(21006))

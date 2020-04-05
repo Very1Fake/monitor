@@ -44,6 +44,13 @@ class Main(NamedTuple):
     cache_path: str = '.cache'
 
 
+class Analytics(NamedTuple):
+    path: str = 'reports'
+    interval: int = 300  # Interval between report files creation (in seconds)
+    datetime: bool = True  # True - all output time will presented as , False - all output time as timestamps
+    datetime_format: str = '%Y-%m-%d %H:%M:%S.%f'
+
+
 class ThreadManager(NamedTuple):
     thread_manager_tick: float = 1
 
@@ -82,11 +89,12 @@ class API(NamedTuple):
     priority_TInterval: list = [100, 100]  # First value is base priority, second value is range (0 for static priority)
 
 
-categories: tuple = ('Main', 'ThreadManager', 'Collector', 'Worker', 'Queues', 'Logger', 'API')
+categories: tuple = ('Main', 'Analytics', 'ThreadManager', 'Collector', 'Worker', 'Queues', 'Logger', 'API')
 
 
 # Global variables
 main: Main = Main()
+analytics: Analytics = Analytics()
 thread_manager: ThreadManager = ThreadManager()
 collector: Collector = Collector()
 worker: Worker = Worker()
