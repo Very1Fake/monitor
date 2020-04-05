@@ -219,6 +219,8 @@ class Worker(threading.Thread):
     additional: bool
     _state: int
     log: logger.Logger
+    speed: float
+    start_time: float
 
     def __init__(self, id_: int, additional: bool = False, postfix: str = ''):
         super().__init__(name=f'Worker-{id_}{postfix}', daemon=True)
@@ -226,6 +228,7 @@ class Worker(threading.Thread):
         self.additional = additional
         self._state = 0
         self.log = logger.Logger(self.name)
+        self.start_time = time.time()
 
     @property
     def state(self) -> int:
@@ -312,6 +315,7 @@ class Worker(threading.Thread):
                 self.log.info(codes.Code(20005))
                 break
             delta: float = time.time() - start
+            self.speed = round(1 / delta, 3) if delta > .001 else 1.0
             time.sleep(storage.worker.worker_tick - delta if storage.worker.worker_tick - delta >= 0 else 0)
 
 

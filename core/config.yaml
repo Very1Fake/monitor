@@ -1,4 +1,5 @@
 analytics:
+  beautify: true
   datetime: true
   datetime_format: '%Y-%m-%d %H:%M:%S.%f'
   interval: 300

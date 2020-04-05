@@ -32,7 +32,6 @@ class Analytics:
         end_time = datetime.utcnow()
         return {
             'main': {
-                'version': sys.modules['core'].__version__,
                 'start_time': self.start_time.strftime(storage.analytics.datetime_format) if
                 storage.analytics.datetime else str(self.start_time.timestamp()),
                 'uptime': str(end_time - self.start_time) if
@@ -40,13 +39,34 @@ class Analytics:
                 'end_time': end_time.strftime(storage.analytics.datetime_format) if
                 storage.analytics.datetime else end_time.timestamp(),
                 'type': type_,
-                'workers': sys.modules['__main__'].monitor.thread_manager.workers.__len__()
             },
             'scripts': {
                 'indexed': core.script_manager.index.index.__len__(),
                 'loaded': core.script_manager.scripts.__len__(),
                 'parsers': core.script_manager.parsers.__len__(),
                 'event_executors': core.script_manager.event_handler.executors.__len__()
+            },
+            'workers': {
+                'count': sys.modules['__main__'].monitor.thread_manager.workers.__len__(),
+                'speed': round(
+                    sum([i.speed for i in sys.modules['__main__'].monitor.thread_manager.workers.values()]),
+                    3
+                ),
+                'list': [
+                    {
+                        'name': i.name,
+                        'speed': i.speed,
+                        'start_time': datetime.utcfromtimestamp(i.start_time).strftime(
+                            storage.analytics.datetime_format
+                        ) if storage.analytics.datetime else str(i.start_time),
+                        'uptime': (datetime.utcnow() - datetime.utcfromtimestamp(i.start_time)).total_seconds() if
+                        storage.analytics.datetime else str(time.time() - i.start_time)
+                    } for i in sys.modules['__main__'].monitor.thread_manager.workers.values()
+                ]
+            },
+            'system': {
+                'version': sys.modules['core'].__version__,
+                'analytics_version': 1
             }
         }
 
@@ -63,7 +83,7 @@ class Analytics:
             storage.analytics.path + f'/report_{suffix}'
                                      f'{datetime.utcnow().strftime("%Y-%m-%d_%H:%M:%S")}.json',
             'w+'
-        ))
+        ), indent=4 if storage.analytics.beautify else None)
 
     def stop(self):
         self.active = False
