@@ -37,7 +37,7 @@ class ScriptIndex:
             os.makedirs(self.path)
         self.log: Logger = Logger('ScriptIndex')
         self.config = self.load_config()
-        self.log.info(codes.Code(26001))
+        self.log.info(codes.Code(20601))
         self.index: list = []
 
     def __repr__(self) -> str:
@@ -45,7 +45,7 @@ class ScriptIndex:
 
     def del_(self):
         self.dump_config()
-        self.log.info(codes.Code(26002))
+        self.log.info(codes.Code(20602))
         del self
 
     def load_config(self) -> dict:
@@ -64,7 +64,7 @@ class ScriptIndex:
                         config['ignore']['scripts'] = []
                 return config
             else:
-                self.log.info(codes.Code(26003))
+                self.log.info(codes.Code(20603))
         return config
 
     def dump_config(self) -> True:
@@ -179,24 +179,24 @@ class ScriptIndex:
         for i in folders:
             file = f'{self.path}/{i}/config.yaml'
             if not os.path.isfile(file):  # Check for config.yaml
-                self.log.info(codes.Code(26004, f'"{i}"/'))
+                self.log.info(codes.Code(20604, f'"{i}"/'))
                 continue
             if not self.check_config(file):  # Check for config.yaml
-                self.log.info(codes.Code(26005, f'"{i}"/'))
+                self.log.info(codes.Code(20605, f'"{i}"/'))
                 continue
             config: dict = self.get_config(file)  # Get config from config.yaml
             if not self.check_dependency_version(config['core']):
-                self.log.info(codes.Code(26006, f'"{i}"/'))
+                self.log.info(codes.Code(20606, f'"{i}"/'))
                 continue
             if 'ignore' in self.config and config['name'] in self.config['ignore']['scripts']:
-                self.log.info(codes.Code(26007, f'"{i}"/'))
+                self.log.info(codes.Code(20607, f'"{i}"/'))
                 continue
             if config['name'] in names:
-                self.log.info(codes.Code(26008, f'"{i}"/'))
+                self.log.info(codes.Code(20608, f'"{i}"/'))
                 continue
             names += (config['name'],)  # Save name to check on uniqueness
             self.index.append(config)
-        self.log.info(codes.Code(26009, len(self.index)))
+        self.log.info(codes.Code(20609, len(self.index)))
 
     def ignore(self, name: str, folder: bool = False) -> bool:
         if isinstance(name, str):
@@ -295,7 +295,7 @@ class ScriptManager:
             del sys.modules[name]
             return True
         except KeyError:
-            self.log.warn(codes.Code(35001, name))
+            self.log.warn(codes.Code(30501, name))
             return False
 
     def _scan(self, script: dict, module: ModuleType) -> bool:
@@ -324,7 +324,7 @@ class ScriptManager:
             self.scripts[script['name']] = {k: v for k, v in script.items() if k != 'name'}
             self.scripts[script['name']]['errors'] = -1
         else:
-            self.log.warn(codes.Code(35002, script['name']))
+            self.log.warn(codes.Code(30502, script['name']))
         return success
 
     def _unload(self, name: str) -> bool:
@@ -335,7 +335,7 @@ class ScriptManager:
             del self.scripts[name]
             return True
         else:
-            self.log.warn(codes.Code(35003, name))
+            self.log.warn(codes.Code(30503, name))
             return False
 
     def _reload(self, name: str) -> bool:
@@ -346,78 +346,78 @@ class ScriptManager:
                 self._scan(script, module)
                 self._destroy(module.__name__)
             else:
-                self.log.warn(codes.Code(35004, name))
+                self.log.warn(codes.Code(30504, name))
                 return False
             return True
         else:
-            self.log.warn(codes.Code(35005, name))
+            self.log.warn(codes.Code(30505, name))
             return False
 
     def load(self, script: str) -> bool:
         script: dict = self.index.get_script(script)
         if script and script['name'] in self.scripts:
-            self.log.warn(codes.Code(35006, script['name']))
+            self.log.warn(codes.Code(30506, script['name']))
             return True
         elif script and script['name'] not in self.scripts:
             try:
                 if self._load(script):
-                    self.log.info(codes.Code(25001, script['name']))
+                    self.log.info(codes.Code(20501, script['name']))
                     return True
             except ImportError as e:
                 if storage.main.production:
-                    self.log.error(codes.Code(45001, script['name']))
+                    self.log.error(codes.Code(40501, script['name']))
                 else:
                     self.log.fatal(e)
         else:
-            self.log.error(codes.Code(45002, script['name']))
+            self.log.error(codes.Code(40502, script['name']))
         return False
 
     def unload(self, name: str) -> bool:
         if name in self.scripts:
             if self._unload(name):
-                self.log.info(codes.Code(25002, name))
+                self.log.info(codes.Code(20502, name))
                 return True
         else:
-            self.log.error(codes.Code(45003, name))
+            self.log.error(codes.Code(40503, name))
         return False
 
     def reload(self, name: str) -> bool:
         if name in self.scripts:
             if self._reload(name):
-                self.log.info(codes.Code(25003, name))
+                self.log.info(codes.Code(20503, name))
                 return True
         else:
-            self.log.error(codes.Code(45004, name))
+            self.log.error(codes.Code(40504, name))
         return False
 
     def load_all(self) -> bool:
-        self.log.info(codes.Code(25004))
+        self.log.info(codes.Code(20504))
         for i in set().union(self.scripts, [i['name'] for i in self.index.index]):  # TODO: Fix here
             try:
                 if self._load(i):
-                    self.log.info(codes.Code(25001, i))
+                    self.log.info(codes.Code(20501, i))
             except ImportError as e:
                 if storage.main.production:
-                    self.log.error(codes.Code(45001, i))
+                    self.log.error(codes.Code(40501, i))
                 else:
                     self.log.fatal(e)
-        self.log.info(codes.Code(25005))
+        self.log.info(codes.Code(20505))
         return True
 
     def unload_all(self) -> bool:
-        self.log.info(codes.Code(25006))
+        self.log.info(codes.Code(20506))
         for i in self.scripts.copy():
             if self._unload(i):
-                self.log.info(codes.Code(25002, i))
-        self.log.info(codes.Code(25007))
+                self.log.info(codes.Code(20502, i))
+        self.log.info(codes.Code(20507))
         return True
 
     def reload_all(self) -> bool:
-        self.log.info(codes.Code(25008))
+        self.log.info(codes.Code(20508))
         for i in self.scripts:
             if self._reload(i):
-                self.log.info(codes.Code(25003, i))
-        self.log.info(codes.Code(25009))
+                self.log.info(codes.Code(20503, i))
+        self.log.info(codes.Code(20509))
         return True
 
     def hash(self) -> str:
@@ -446,7 +446,7 @@ class ScriptManager:
                         self.scripts[name]['errors'] < self.scripts[name]['max-errors']:
                     self.scripts[name]['errors'] += 1
                 else:
-                    self.log.warn(codes.Code(35007, name))
+                    self.log.warn(codes.Code(30507, name))
                     self.unload(name)
                 return False, None
             else:

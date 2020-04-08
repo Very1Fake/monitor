@@ -127,36 +127,36 @@ def change_level(level: int):
     log = Logger('Logger')
     if level in (0, 1, 2, 3, 4, 5):
         if storage.logger.log_level == level:
-            log.warn(codes.Code(38001))
+            log.warn(codes.Code(30801))
         else:
-            log.info(codes.Code(28001, f'From {storage.logger.log_level} to {level}'))
+            log.info(codes.Code(20801, f'From {storage.logger.log_level} to {level}'))
             storage.logger.log_level = level
     else:
         if storage.main.production:
-            log.error(codes.Code(48001))
+            log.error(codes.Code(40801))
         else:
-            log.fatal(LoggerError(codes.Code(48001)))
+            log.fatal(LoggerError(codes.Code(40801)))
 
 
 def change_mode(mode: int):
     log = Logger('Logger')
     if mode in (0, 1, 2, 3):
         if storage.logger.log_mode == mode:
-            log.warn(codes.Code(38002))
+            log.warn(codes.Code(30802))
         else:
-            log.info(codes.Code(28002, f'From {storage.logger.log_mode} to {mode}'))
+            log.info(codes.Code(20802, f'From {storage.logger.log_mode} to {mode}'))
             storage.logger.log_mode = mode
     else:
         if storage.main.production:
-            log.error(codes.Code(48002))
+            log.error(codes.Code(40802))
         else:
-            log.fatal(LoggerError(codes.Code(48002)))
+            log.fatal(LoggerError(codes.Code(40802)))
 
 
 def change_time(global_: bool):
     log = Logger('Logger')
     if storage.logger.log_utc_time == global_:
-        log.warn(codes.Code(38003))
+        log.warn(codes.Code(30803))
     else:
-        log.info(codes.Code(28003) if global_ else codes.Code(28004))
+        log.info(codes.Code(20803) if global_ else codes.Code(20804))
         storage.logger.log_utc_time = global_
