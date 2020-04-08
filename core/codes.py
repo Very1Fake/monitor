@@ -2,6 +2,9 @@ import struct
 
 # Debug (1xxxx)
 
+# System (100xx)
+_10000 = 'Test debug'
+
 # Collector (103xx)
 _10301 = 'N targets recived form script'
 
@@ -12,6 +15,7 @@ _10402 = 'Target\'s execution result'
 # Information (2xxxx)
 
 # System (200xx)
+_20000 = 'Test information'
 _20001 = 'Thread started'
 _20002 = 'Thread paused'
 _20003 = 'Thread resumed'
@@ -69,6 +73,9 @@ _20804 = 'Time changed to local'
 
 # Warnings (3xxxx)
 
+# System (300xx)
+_30000 = 'Test warning'
+
 # ThreadManager (302xx)
 _30201 = 'Collector was unexpectedly stopped'
 _30202 = 'Worker was unexpectedly stopped'
@@ -97,6 +104,9 @@ _30803 = 'Meaningless time change (changing to the same value)'
 
 # Errors (4xxxx)
 
+# System (400xx)
+_40000 = 'Test error'
+
 # Collector (403xx)
 _40301 = 'Unknown index'
 _40302 = 'Wrong target list received from script'
@@ -119,6 +129,9 @@ _40801 = 'Can\'t change level (possible values (0, 1, 2, 3, 4, 5))'
 _40802 = 'Can\'t change mode (possible values (0, 1, 2, 3))'
 
 # Fatals (5xxxx)
+
+# System (500xx)
+_50000 = 'Test fatal'
 
 # Core (501xx)
 _50101 = 'ThreadManager unexpectedly has turned off'
