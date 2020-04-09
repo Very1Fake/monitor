@@ -1,6 +1,7 @@
 import queue
 import threading
 import time
+import traceback
 from typing import Tuple, Dict
 
 from . import analytics
@@ -93,9 +94,9 @@ class Collector(threading.Thread):
             self.schedule_indices[now + (0 if force else index.interval)] = index
         else:
             if storage.main.production:
-                self.log.error(codes.Code(43001, index))
+                self.log.error(codes.Code(40301, index))
             else:
-                self.log.fatal(CollectorError(codes.Code(43001, index)))
+                self.log.fatal(CollectorError(codes.Code(40301, index)))
 
     def insert_target(self, target):
         if not isinstance(target, (tuple, list)):
@@ -117,21 +118,21 @@ class Collector(threading.Thread):
                     elif isinstance(i, api.TInterval):
                         self.schedule_targets[time.time() + i.interval] = i
                 except ValueError:
-                    self.log.warn(codes.Code(33001, i))
+                    self.log.warn(codes.Code(30301, i))
                 except IndexError:
                     self.log.test(f'Inserting non-unique target')
 
     def step_parsers_check(self) -> None:
         if script_manager.hash() != self.parsers_hash:
-            self.log.info(codes.Code(23001))
+            self.log.info(codes.Code(20301))
             for i in script_manager.parsers:
                 ok, index = script_manager.execute_parser(i, 'index', ())
                 if ok:
                     self.insert_index(index, time.time(), True)
                 else:
-                    self.log.error(codes.Code(43002, i))
+                    self.log.error(codes.Code(40302, i))
             self.parsers_hash = script_manager.hash()
-            self.log.info(codes.Code(23002))
+            self.log.info(codes.Code(20302))
 
     def step_reindex(self) -> bool:
         try:
@@ -139,18 +140,18 @@ class Collector(threading.Thread):
             ok, targets = script_manager.execute_parser(index.script, 'targets', ())
             if ok:
                 if isinstance(targets, (tuple, list)):
-                    self.log.debug(codes.Code(13001, f'{len(targets)}, {index.script}'))
+                    self.log.debug(codes.Code(10301, f'{len(targets)}, {index.script}'))
                     self.insert_target(targets)
                 else:
                     if storage.main.production:
-                        self.log.error(codes.Code(43002, index.script))
+                        self.log.error(codes.Code(40302, index.script))
                     else:
-                        self.log.fatal(CollectorError((codes.Code(43002, index.script))))
+                        self.log.fatal(CollectorError((codes.Code(40302, index.script))))
                 self.insert_index(index, time.time())
                 self.schedule_indices.pop_item(id_)
                 return True
             else:
-                self.log.error(codes.Code(43003, index.script))
+                self.log.error(codes.Code(40303, index.script))
                 return False
         except StopIteration:
             return False
@@ -179,9 +180,9 @@ class Collector(threading.Thread):
                             priority = 1001
                         task_queue.put(library.PrioritizedItem(priority, v), timeout=storage.queues.task_queue_put_wait)
                     except queue.Full:
-                        self.log.warn(codes.Code(33002, v))
+                        self.log.warn(codes.Code(30302, v))
                 else:
-                    self.log.error(codes.Code(43004, v))
+                    self.log.error(codes.Code(40304, v))
                 ids += (k,)
             self.schedule_targets.pop_item(ids)
 
@@ -197,7 +198,7 @@ class Collector(threading.Thread):
                     self.step_target_queue_check()
                     self.step_send_tasks()
                 except Exception as e:
-                    self.throw(codes.Code(53001, f'While working: {e.__class__.__name__}: {e.__str__()}'))
+                    self.throw(codes.Code(50301, f'While working: {e.__class__.__name__}: {e.__str__()}'))
                     break
             elif self.state == 2:  # Pausing state
                 self.log.info(codes.Code(20002))
@@ -254,38 +255,38 @@ class Worker(threading.Thread):
             self.log.fatal(WorkerError(code))
 
     def execute(self, target: api.TargetType) -> bool:
-        self.log.debug(codes.Code(14001, target))
+        self.log.debug(codes.Code(10401, target))
         if target.content_hash() not in success_hashes.values():  # TODO: Optimize here
             try:
                 ok, status = script_manager.execute_parser(target.script, 'execute', (target,))
                 if ok:
                     if isinstance(status, api.SWaiting):
-                        self.log.debug(codes.Code(14002, status))
+                        self.log.debug(codes.Code(10402, status))
                         try:
                             target_queue.put(status.target, timeout=storage.queues.target_queue_put_wait)
                         except queue.Full:
-                            self.log.warn(codes.Code(34002, status.target))
+                            self.log.warn(codes.Code(30402, status.target))
                     elif isinstance(status, api.SSuccess):
-                        self.log.info(codes.Code(24001, status.result))
+                        self.log.info(codes.Code(20401, status.result))
                         success_hashes[time.time() + storage.collector.success_hashes_time] = target.content_hash()
                         script_manager.event_handler.success_status(status)
                     elif isinstance(status, api.SFail):
-                        self.log.warn(codes.Code(34001, status))
+                        self.log.warn(codes.Code(30401, status))
                         script_manager.event_handler.fail_status(status)
                         return False
                     else:
-                        self.log.debug(codes.Code(14002, status))
+                        self.log.debug(codes.Code(10402, status))
                         if storage.main.production:
-                            self.log.error(codes.Code(44001, target))
+                            self.log.error(codes.Code(40401, target))
                         else:
-                            self.log.fatal(CollectorError(codes.Code(44001, target)))
+                            self.log.fatal(CollectorError(codes.Code(40401, target)))
                         return True
                     return True
                 else:
-                    self.log.error(codes.Code(44002, target))
+                    self.log.error(codes.Code(40402, target))
                     return False
             except scripts.ScriptManagerError:
-                self.log.error(codes.Code(44003, target))
+                self.log.error(codes.Code(40403, target))
 
     def run(self) -> None:
         self.state = 1
@@ -301,7 +302,7 @@ class Worker(threading.Thread):
                     if target:
                         self.execute(target.content)
                 except Exception as e:
-                    self.throw(codes.Code(54001, f'While working: {e.__class__.__name__}: {e.__str__()}'))
+                    self.throw(codes.Code(50401, f'While working: {e.__class__.__name__}: {e.__str__()}'))
                     break
             elif self.state == 2:  # Pausing state
                 self.log.info(codes.Code(20002))
@@ -349,27 +350,27 @@ class ThreadManager(threading.Thread):
     def check_collector(self) -> None:
         if not self.collector:
             self.collector = Collector()
-            self.log.info(codes.Code(22001))
+            self.log.info(codes.Code(20201))
         if not self.collector.is_alive():
             try:
                 self.collector.start()
-                self.log.info(codes.Code(22002))
+                self.log.info(codes.Code(20202))
             except RuntimeError:
-                self.log.warn(codes.Code(32001))
+                self.log.warn(codes.Code(30201))
                 self.collector = None
 
     def check_workers(self) -> None:
         if self.workers_count() < storage.worker.workers_count:
             self.workers[self.workers_increment_id] = Worker(self.workers_increment_id)
-            self.log.info(codes.Code(22003, f'Worker-{self.workers_increment_id}'))
+            self.log.info(codes.Code(20203, f'Worker-{self.workers_increment_id}'))
             self.workers_increment_id += 1
         for v in tuple(self.workers.values()):
             if not v.is_alive():
                 try:
                     v.start()
-                    self.log.info(codes.Code(22004, f'{v.name}'))
+                    self.log.info(codes.Code(20204, f'{v.name}'))
                 except RuntimeError:
-                    self.log.warn(codes.Code(32002, f'{v.name}'))
+                    self.log.warn(codes.Code(30202, f'{v.name}'))
                     del self.workers[v.id]
 
     def stop_threads(self) -> None:
@@ -404,9 +405,9 @@ class ThreadManager(threading.Thread):
                 time.sleep(storage.thread_manager.thread_manager_tick - delta if
                            storage.thread_manager.thread_manager_tick - delta >= 0 else 0)
             except Exception as e:
-                self.log.fatal_msg(codes.Code(52001, f'{e.__class__.__name__}: {e.__str__()}'))
+                self.log.fatal_msg(codes.Code(50201, f'{e.__class__.__name__}: {e.__str__()}'), traceback.format_exc())
                 self.stop_threads()
-                self.throw(codes.Code(52001, f'While working: {e.__class__.__name__}: {e.__str__()}'))
+                self.throw(codes.Code(50201, f'While working: {e.__class__.__name__}: {e.__str__()}'))
                 break
 
     def close(self) -> float:
@@ -428,7 +429,7 @@ class Main:
 
     def turn_on(self) -> bool:
         if storage.main.production:
-            self.log.info(codes.Code(21001))
+            self.log.info(codes.Code(20101))
         script_manager.index.reindex()
         script_manager.load_all()
         script_manager.event_handler.monitor_turning_on()
@@ -452,18 +453,18 @@ class Main:
         try:
             while self.thread_manager.is_alive():
                 time.sleep(1)
-            self.log.fatal(MonitorError(codes.Code(51001)))
+            self.log.fatal(MonitorError(codes.Code(50101)))
         except KeyboardInterrupt:
-            self.log.info(codes.Code(21002))
+            self.log.info(codes.Code(20102))
         finally:
-            self.log.info(codes.Code(21003))
+            self.log.info(codes.Code(20103))
             self.turn_off()
             self.thread_manager.join(self.thread_manager.close())
-            self.log.info(codes.Code(21004))
+            self.log.info(codes.Code(20104))
             cache.dump_success_hashes(success_hashes)
-            self.log.info(codes.Code(21005))
+            self.log.info(codes.Code(20105))
             script_manager.event_handler.monitor_turned_off()
             analytics.analytics.stop()
             script_manager.unload_all()
             script_manager.del_()
-            self.log.info(codes.Code(21006))
+            self.log.info(codes.Code(20106))
