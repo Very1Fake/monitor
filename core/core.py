@@ -1,6 +1,7 @@
 import queue
 import threading
 import time
+import traceback
 from typing import Tuple, Dict
 
 from . import analytics
@@ -404,7 +405,7 @@ class ThreadManager(threading.Thread):
                 time.sleep(storage.thread_manager.thread_manager_tick - delta if
                            storage.thread_manager.thread_manager_tick - delta >= 0 else 0)
             except Exception as e:
-                self.log.fatal_msg(codes.Code(50201, f'{e.__class__.__name__}: {e.__str__()}'))
+                self.log.fatal_msg(codes.Code(50201, f'{e.__class__.__name__}: {e.__str__()}'), traceback.format_exc())
                 self.stop_threads()
                 self.throw(codes.Code(50201, f'While working: {e.__class__.__name__}: {e.__str__()}'))
                 break

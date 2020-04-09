@@ -1,4 +1,5 @@
 import os
+import traceback
 from typing import Union
 
 from termcolor import colored
@@ -95,15 +96,15 @@ class Logger:
             return True
         return False
 
-    def fatal_msg(self, msg: Union[str, codes.Code]) -> bool:
+    def fatal_msg(self, msg: Union[str, codes.Code], traceback_: str = '') -> bool:
         if storage.logger.log_mode == 1 or storage.logger.log_mode == 3:
             print(colored(
                 f"[{lib.get_time(storage.logger.log_utc_time)}] [FATAL] [{self.name}]: {self.format_msg(msg)}",
                 'red',
                 attrs=['reverse']
-            ))
+            ) + f"\n{'=' * 32}\n{traceback_}\n{'=' * 32}" if traceback_ else '')
         if storage.logger.log_mode == 2 or storage.logger.log_mode == 3:
-            self.write(0, msg)
+            self.write(0, self.format_msg(msg) + f"\n{'=' * 32}\n{traceback_}\n{'=' * 32}" if traceback_ else '')
         return True
 
     def fatal(self, e: Exception, from_: Exception = None):
@@ -113,9 +114,9 @@ class Logger:
                 f"{e.__class__.__name__}: {e.__str__()}",
                 'red',
                 attrs=['reverse']
-            ))
+            ) + f"\n{'=' * 32}\n{traceback.format_exc()}\n{'=' * 32}")
         if storage.logger.log_mode == 2 or storage.logger.log_mode == 3:
-            self.write(0, f"  {e.__class__.__name__}: {e.__str__()}\n")
+            self.write(0, f"  {e.__class__.__name__}: {e.__str__()}\n{'=' * 32}\n{traceback.format_exc()}\n{'=' * 32}")
             log_file.flush()
         if from_:
             raise e from from_

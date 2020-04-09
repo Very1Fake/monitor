@@ -71,7 +71,7 @@ class Collector(NamedTuple):
 
 class Worker(NamedTuple):
     workers_count: int = 3  # Max workers count in normal condition
-    workers_proportion: float = 1.5  # Max workers count in overload condition (ceil(workers_count * workers_proportion))
+    workers_proportion: float = 1.5  # Max workers count in overload condition, ceil(workers_count * workers_proportion)
     worker_tick: float = 1  # Delta time for worker run loop
     worker_wait: float = 5
 
