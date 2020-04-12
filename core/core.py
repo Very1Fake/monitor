@@ -221,6 +221,7 @@ class Worker(threading.Thread):
     _state: int
     log: logger.Logger
     speed: float
+    idle: int
     start_time: float
 
     def __init__(self, id_: int, additional: bool = False, postfix: str = ''):
@@ -229,6 +230,8 @@ class Worker(threading.Thread):
         self.additional = additional
         self._state = 0
         self.log = logger.Logger(self.name)
+        self.speed = .0
+        self.idle = 0
         self.start_time = time.time()
 
     @property
@@ -298,9 +301,10 @@ class Worker(threading.Thread):
                     try:
                         target = task_queue.get_nowait()
                     except queue.Empty:
-                        pass
+                        self.idle += 1
                     if target:
                         self.execute(target.content)
+                        self.idle = 0
                 except Exception as e:
                     self.throw(codes.Code(50401, f'While working: {e.__class__.__name__}: {e.__str__()}'))
                     break
@@ -316,7 +320,7 @@ class Worker(threading.Thread):
                 self.log.info(codes.Code(20005))
                 break
             delta: float = time.time() - start
-            self.speed = round(1 / delta, 3) if delta > .001 else .001
+            self.speed = round(1 / delta, 3) if self.idle == 0 else 0
             time.sleep(storage.worker.worker_tick - delta if storage.worker.worker_tick - delta >= 0 else 0)
 
 
