@@ -374,11 +374,14 @@ class ThreadManager(threading.Thread):
                     del self.workers[v.id]
 
     def stop_threads(self) -> None:
-        for i in tuple(self.workers.values()):
+        for i in self.workers.values():
             i.state = 5
-            i.join(storage.worker.worker_wait)
+        for i in tuple(self.workers):
+            self.workers[i].join(storage.worker.worker_wait)
+            del self.workers[i]
         self.collector.state = 5
         self.collector.join(storage.collector.collector_wait)
+        self.collector = None
 
     def run(self) -> None:
         self.state = 1
