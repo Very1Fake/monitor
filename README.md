@@ -18,8 +18,7 @@ Monitor - universal program for monitoring
 Before start, you need to install libraries
 
 ``` bash
-sudo pip install -r requirements.txt
-sudo pip install -r scripts/requirements.txt
+make
 ```
 
 To start use this command
