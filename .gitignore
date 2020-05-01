@@ -3,6 +3,9 @@
 logs/
 reports/
 
+*.pem
+authority.yaml
+
 ### Idea
 .idea/
 

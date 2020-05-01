@@ -1,5 +1,6 @@
+uctp==1.0.0a2
 checksumdir==1.1.7
 packaging==20.3
 termcolor==1.1.0
-dataclasses==0.6
+pycryptodome==3.9.7
 PyYAML==5.3.1

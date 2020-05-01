@@ -4,16 +4,20 @@ import time
 import traceback
 from typing import Tuple, Dict
 
+import uctp
+import yaml
+from Crypto.PublicKey import RSA
+
 from . import analytics
 from . import api
 from . import cache
 from . import codes
+from . import commands
 from . import library
 from . import logger
 from . import scripts
 from . import storage
 
-# TODO: Success hashes object
 # TODO: throw() for state setters
 
 
@@ -22,6 +26,16 @@ script_manager: scripts.ScriptManager = scripts.ScriptManager()
 success_hashes: library.Schedule = library.Schedule()
 task_queue: queue.PriorityQueue = queue.PriorityQueue(storage.queues.task_queue_size)
 target_queue: queue.Queue = queue.Queue(storage.queues.target_queue_size)
+server = uctp.peer.Peer(
+    'monitor',
+    RSA.import_key(open('./monitor.pem').read()),
+    '0.0.0.0',
+    trusted=uctp.peer.Trusted(*yaml.safe_load(open('authority.yaml'))['trusted']),
+    aliases=uctp.peer.Aliases(yaml.safe_load(open('authority.yaml'))['aliases']),
+    auth_timeout=4,
+    max_connections=16,
+    buffer=8192
+)
 
 
 def refresh() -> None:
@@ -221,6 +235,7 @@ class Worker(threading.Thread):
     _state: int
     log: logger.Logger
     speed: float
+    idle: int
     start_time: float
 
     def __init__(self, id_: int, additional: bool = False, postfix: str = ''):
@@ -229,6 +244,8 @@ class Worker(threading.Thread):
         self.additional = additional
         self._state = 0
         self.log = logger.Logger(self.name)
+        self.speed = .0
+        self.idle = 0
         self.start_time = time.time()
 
     @property
@@ -298,9 +315,10 @@ class Worker(threading.Thread):
                     try:
                         target = task_queue.get_nowait()
                     except queue.Empty:
-                        pass
+                        self.idle += 1
                     if target:
                         self.execute(target.content)
+                        self.idle = 0
                 except Exception as e:
                     self.throw(codes.Code(50401, f'While working: {e.__class__.__name__}: {e.__str__()}'))
                     break
@@ -316,12 +334,12 @@ class Worker(threading.Thread):
                 self.log.info(codes.Code(20005))
                 break
             delta: float = time.time() - start
-            self.speed = round(1 / delta, 3) if delta > .001 else .001
+            self.speed = round(1 / delta, 3) if self.idle == 0 else 0
             time.sleep(storage.worker.worker_tick - delta if storage.worker.worker_tick - delta >= 0 else 0)
 
 
 class ThreadManager(threading.Thread):
-    state: int
+    _state: int
     log: logger.Logger
     workers_increment_id: int
     workers: Dict[int, Worker]
@@ -329,11 +347,29 @@ class ThreadManager(threading.Thread):
 
     def __init__(self) -> None:
         super().__init__(name='ThreadManager', daemon=True)
-        self.state = 0
+        self._state = 0
         self.log = logger.Logger('ThreadManager')
         self.workers_increment_id = 0
         self.workers = {}
         self.collector = None
+
+    @property
+    def state(self) -> int:
+        return self._state
+
+    @state.setter
+    def state(self, value: int) -> None:
+        if isinstance(value, int):
+            if self._state == 1 and value not in (2, 5):
+                raise ThreadManagerError('In this state, you can change state only to 2 or 5')
+            elif self._state in (2, 4, 5):
+                raise ThreadManagerError('State locked')
+            elif self._state == 3 and value not in (4, 5):
+                raise ThreadManagerError('In this state, you can change state only to 4 or 5')
+            else:
+                self._state = value
+        else:
+            ValueError('state must be int')
 
     def throw(self, code: codes.Code) -> None:
         script_manager.event_handler.alert(code, self.name)
@@ -374,11 +410,14 @@ class ThreadManager(threading.Thread):
                     del self.workers[v.id]
 
     def stop_threads(self) -> None:
-        for i in tuple(self.workers.values()):
+        for i in self.workers.values():
             i.state = 5
-            i.join(storage.worker.worker_wait)
+        for i in tuple(self.workers):
+            self.workers[i].join(storage.worker.worker_wait)
+            del self.workers[i]
         self.collector.state = 5
         self.collector.join(storage.collector.collector_wait)
+        self.collector = None
 
     def run(self) -> None:
         self.state = 1
@@ -416,6 +455,7 @@ class ThreadManager(threading.Thread):
 
 
 class Main:
+    state: int
     log: logger.Logger
     thread_manager: ThreadManager
 
@@ -424,6 +464,7 @@ class Main:
         if config_file_:
             config_file = config_file_
         refresh()
+        self.state = 0
         self.log = logger.Logger('Core')
         self.thread_manager = ThreadManager()
 
@@ -443,19 +484,29 @@ class Main:
         return True
 
     def start(self):
+        self.state = 1
+        commands.Commands(server, self)
+
         analytics.analytics.dump(0)
         self.turn_on()
+        server.run()
 
         self.thread_manager.start()
 
         script_manager.event_handler.monitor_turned_on()
 
         try:
-            while self.thread_manager.is_alive():
-                time.sleep(1)
-            self.log.fatal(MonitorError(codes.Code(50101)))
-        except KeyboardInterrupt:
-            self.log.info(codes.Code(20102))
+            while 0 < self.state < 2:
+                try:
+                    if self.thread_manager.is_alive():
+                        time.sleep(1)
+                    else:
+                        self.log.fatal(MonitorError(codes.Code(50101)))
+                except KeyboardInterrupt:
+                    self.log.info(codes.Code(20102))
+                    self.state = 2
+                except MonitorError:
+                    self.state = 2
         finally:
             self.log.info(codes.Code(20103))
             self.turn_off()

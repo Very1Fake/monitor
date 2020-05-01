@@ -17,8 +17,8 @@ api:
 collector:
   collector_tick: 0.5
   collector_wait: 10
-  success_hashes_time: 172800
-  targets_hashes_size: 1024
+  success_hashes_time: 604800
+  targets_hashes_size: 2048
 logger:
   log_level: 4
   log_message_content: 1
@@ -30,9 +30,9 @@ main:
   production: false
 queues:
   target_queue_put_wait: 8
-  target_queue_size: 512
+  target_queue_size: 1024
   task_queue_put_wait: 8
-  task_queue_size: 512
+  task_queue_size: 1024
 thread_manager:
   thread_manager_tick: 1
 worker:
