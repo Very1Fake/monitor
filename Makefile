@@ -1,4 +1,4 @@
-.PHONY: clean
+.PHONY: init clean
 
 PYTHON=/usr/bin/python3.8
 
