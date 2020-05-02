@@ -2,7 +2,7 @@ import queue
 import threading
 import time
 import traceback
-from typing import Tuple, Dict
+from typing import Tuple, Dict, Type
 
 import uctp
 import yaml
@@ -24,18 +24,6 @@ from . import storage
 config_file = 'core/config.yaml'
 script_manager: scripts.ScriptManager = scripts.ScriptManager()
 success_hashes: library.Schedule = library.Schedule()
-task_queue: queue.PriorityQueue = queue.PriorityQueue(storage.queues.task_queue_size)
-target_queue: queue.Queue = queue.Queue(storage.queues.target_queue_size)
-server = uctp.peer.Peer(
-    'monitor',
-    RSA.import_key(open('./monitor.pem').read()),
-    '0.0.0.0',
-    trusted=uctp.peer.Trusted(*yaml.safe_load(open('authority.yaml'))['trusted']),
-    aliases=uctp.peer.Aliases(yaml.safe_load(open('authority.yaml'))['aliases']),
-    auth_timeout=4,
-    max_connections=16,
-    buffer=8192
-)
 
 
 def refresh() -> None:
@@ -62,20 +50,26 @@ class WorkerError(Exception):
     pass
 
 
-class Collector(threading.Thread):
-    _state: int
-    log: logger.Logger
-    schedule_indices: library.Schedule
-    schedule_targets: library.UniqueSchedule
-    parsers_hash: str
+class StateError(Exception):
+    pass
 
-    def __init__(self):
-        super().__init__(name='Collector', daemon=True)
+
+class ThreadClass(threading.Thread):
+    _exception: Type[Exception]
+    _state: int
+
+    log: logger.Logger
+
+    def __init__(self, name: str, exception: Type[Exception]):
+        if not isinstance(name, str):
+            raise TypeError('name must be str')
+
+        super().__init__(name=name, daemon=True)
+
         self._state = 0
-        self.log = logger.Logger(self.name)
-        self.schedule_indices = library.Schedule()
-        self.schedule_targets = library.UniqueSchedule(storage.collector.targets_hashes_size)
-        self.parsers_hash = ''
+        self._exception = exception
+
+        self.log = logger.Logger(name)
 
     @property
     def state(self) -> int:
@@ -85,11 +79,11 @@ class Collector(threading.Thread):
     def state(self, value: int) -> None:
         if isinstance(value, int):
             if self._state == 1 and value not in (2, 5):
-                raise CollectorError('In this state, you can change state only to 2 or 5')
+                raise StateError('In this state, you can change state only to 2 or 5')
             elif self._state in (2, 4, 5):
-                raise CollectorError('State locked')
+                raise StateError('State locked')
             elif self._state == 3 and value not in (4, 5):
-                raise CollectorError('In this state, you can change state only to 4 or 5')
+                raise StateError('In this state, you can change state only to 4 or 5')
             else:
                 self._state = value
         else:
@@ -98,7 +92,33 @@ class Collector(threading.Thread):
     def throw(self, code: codes.Code) -> None:
         script_manager.event_handler.alert(code, self.name)
         if not storage.main.production:
-            self.log.fatal(CollectorError(code))
+            self.log.fatal(self._exception(code))
+
+
+task_queue: queue.PriorityQueue = queue.PriorityQueue(storage.queues.task_queue_size)
+target_queue: queue.Queue = queue.Queue(storage.queues.target_queue_size)
+server = uctp.peer.Peer(
+    'monitor',
+    RSA.import_key(open('./monitor.pem').read()),
+    '0.0.0.0',
+    trusted=uctp.peer.Trusted(*yaml.safe_load(open('authority.yaml'))['trusted']),
+    aliases=uctp.peer.Aliases(yaml.safe_load(open('authority.yaml'))['aliases']),
+    auth_timeout=4,
+    buffer=8192
+)
+
+
+class Collector(ThreadClass):
+    log: logger.Logger
+    schedule_indices: library.Schedule
+    schedule_targets: library.UniqueSchedule
+    parsers_hash: str
+
+    def __init__(self):
+        super().__init__('Collector', CollectorError)
+        self.schedule_indices = library.Schedule()
+        self.schedule_targets = library.UniqueSchedule(storage.collector.targets_hashes_size)
+        self.parsers_hash = ''
 
     def insert_index(self, index: api.IndexType, now: float, force: bool = False) -> None:
         if isinstance(index, api.IOnce):
@@ -229,47 +249,20 @@ class Collector(threading.Thread):
             time.sleep(storage.collector.collector_tick - delta if storage.collector.collector_tick - delta >= 0 else 0)
 
 
-class Worker(threading.Thread):
+class Worker(ThreadClass):
     id: int
     additional: bool
-    _state: int
-    log: logger.Logger
     speed: float
     idle: int
     start_time: float
 
     def __init__(self, id_: int, additional: bool = False, postfix: str = ''):
-        super().__init__(name=f'Worker-{id_}{postfix}', daemon=True)
+        super().__init__(f'Worker-{id_}{postfix}', WorkerError)
         self.id = id_
         self.additional = additional
-        self._state = 0
-        self.log = logger.Logger(self.name)
         self.speed = .0
         self.idle = 0
         self.start_time = time.time()
-
-    @property
-    def state(self) -> int:
-        return self._state
-
-    @state.setter
-    def state(self, value: int) -> None:
-        if isinstance(value, int):
-            if self._state == 1 and value not in (2, 5):
-                raise WorkerError('In this state, you can change state only to 2 or 5')
-            elif self._state in (2, 4, 5):
-                raise WorkerError('State locked')
-            elif self._state == 3 and value not in (4, 5):
-                raise WorkerError('In this state, you can change state only to 4 or 5')
-            else:
-                self._state = value
-        else:
-            ValueError('state must be int')
-
-    def throw(self, code: codes.Code) -> None:
-        script_manager.event_handler.alert(code, self.name)
-        if not storage.main.production:
-            self.log.fatal(WorkerError(code))
 
     def execute(self, target: api.TargetType) -> bool:
         self.log.debug(codes.Code(10401, target))
@@ -338,43 +331,16 @@ class Worker(threading.Thread):
             time.sleep(storage.worker.worker_tick - delta if storage.worker.worker_tick - delta >= 0 else 0)
 
 
-class ThreadManager(threading.Thread):
-    _state: int
-    log: logger.Logger
+class ThreadManager(ThreadClass):
     workers_increment_id: int
     workers: Dict[int, Worker]
     collector: Collector
 
     def __init__(self) -> None:
-        super().__init__(name='ThreadManager', daemon=True)
-        self._state = 0
-        self.log = logger.Logger('ThreadManager')
+        super().__init__('ThreadManager', ThreadManagerError)
         self.workers_increment_id = 0
         self.workers = {}
         self.collector = None
-
-    @property
-    def state(self) -> int:
-        return self._state
-
-    @state.setter
-    def state(self, value: int) -> None:
-        if isinstance(value, int):
-            if self._state == 1 and value not in (2, 5):
-                raise ThreadManagerError('In this state, you can change state only to 2 or 5')
-            elif self._state in (2, 4, 5):
-                raise ThreadManagerError('State locked')
-            elif self._state == 3 and value not in (4, 5):
-                raise ThreadManagerError('In this state, you can change state only to 4 or 5')
-            else:
-                self._state = value
-        else:
-            ValueError('state must be int')
-
-    def throw(self, code: codes.Code) -> None:
-        script_manager.event_handler.alert(code, self.name)
-        if not storage.main.production:
-            self.log.fatal(ThreadManagerError(code))
 
     def workers_count(self, additional: bool = False) -> int:
         count = 0
