@@ -117,7 +117,7 @@ class Collector(ThreadClass):
     def __init__(self):
         super().__init__('Collector', CollectorError)
         self.schedule_indices = library.Schedule()
-        self.schedule_targets = library.UniqueSchedule(storage.collector.targets_hashes_size)
+        self.schedule_targets = library.UniqueSchedule()
         self.parsers_hash = ''
 
     def insert_index(self, index: api.IndexType, now: float, force: bool = False) -> None:
@@ -170,7 +170,7 @@ class Collector(ThreadClass):
 
     def step_reindex(self) -> bool:
         try:
-            id_, index = next(self.schedule_indices.get_slice_gen(time.time()))
+            id_, index = next(self.schedule_indices[:time.time()])
             ok, targets = script_manager.execute_parser(index.script, 'targets', ())
             if ok:
                 if isinstance(targets, (tuple, list)):
@@ -182,7 +182,7 @@ class Collector(ThreadClass):
                     else:
                         self.log.fatal(CollectorError((codes.Code(40302, index.script))))
                 self.insert_index(index, time.time())
-                self.schedule_indices.pop_item(id_)
+                del self.schedule_indices[id_]
                 return True
             else:
                 self.log.error(codes.Code(40303, index.script))
@@ -199,9 +199,8 @@ class Collector(ThreadClass):
                 return
 
     def step_send_tasks(self) -> None:
-        if any(self.schedule_targets.get_slice_gen(time.time())):
-            ids: Tuple[float] = ()
-            for k, v in self.schedule_targets.get_slice_gen(time.time()):
+        if any(self.schedule_targets[:time.time()]):
+            for k, v in self.schedule_targets.pop(slice(time.time())):
                 if v.script in script_manager.scripts and v.script in script_manager.parsers:
                     try:
                         if isinstance(v, api.TSmart):
@@ -217,8 +216,6 @@ class Collector(ThreadClass):
                         self.log.warn(codes.Code(30302, v))
                 else:
                     self.log.error(codes.Code(40304, v))
-                ids += (k,)
-            self.schedule_targets.pop_item(ids)
 
     def run(self) -> None:
         self.state = 1
@@ -226,7 +223,7 @@ class Collector(ThreadClass):
             start: float = time.time()
             if self.state == 1:  # Active state
                 try:
-                    success_hashes.del_slice(time.time())
+                    del success_hashes[slice(time.time())]
                     self.step_parsers_check()
                     self.step_reindex()
                     self.step_target_queue_check()

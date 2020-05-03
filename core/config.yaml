@@ -18,7 +18,6 @@ collector:
   collector_tick: 0.5
   collector_wait: 10
   success_hashes_time: 604800
-  targets_hashes_size: 2048
 logger:
   log_level: 4
   log_message_content: 1

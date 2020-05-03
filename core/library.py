@@ -1,8 +1,9 @@
 import collections
 import time
+from collections import MutableMapping
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, List, Tuple, Generator, Iterator
+from typing import Any, List, Tuple, Generator, Iterator, Union
 
 
 class LibraryError(Exception):
@@ -15,7 +16,7 @@ class PrioritizedItem:
     content: Any = field(compare=False)
 
 
-class Schedule(dict):
+class OldSchedule(dict):
     def __setitem__(self, time_: float, value):
         if isinstance(time_, float) or isinstance(time_, int):
             super().__setitem__(round(time_, 7), value)
@@ -51,7 +52,54 @@ class Schedule(dict):
             self.__delitem__(i)
 
 
-class UniqueSchedule(Schedule):
+class Schedule(dict):
+    def __setitem__(self, time_: Union[float, int], value):
+        if isinstance(time_, float) or isinstance(time_, int):
+            super().__setitem__(round(time_, 7), value)
+        else:
+            raise KeyError('Key must be int or float')
+
+    def __getitem__(self, time_: Union[float, int, slice]):
+        if isinstance(time_, slice):
+            if time_.start:
+                return (i for i in self.items() if i[0] >= time_.start)
+            elif time_.stop:
+                return (i for i in self.items() if i[0] <= time_.stop)
+            else:
+                return ()
+        else:
+            return super().__getitem__(time_)
+
+    def __delitem__(self, time_: Union[float, int, slice]):
+        if isinstance(time_, slice):
+            for i in self.key_list(time_):
+                super().__delitem__(i)
+        else:
+            super().__delitem__(time_)
+
+    def pop(self, time_: Union[float, int, slice]) -> Tuple[Any]:
+        items = tuple(self.__getitem__(time_))
+        del self[time_]
+        return items
+
+    def pop_first(self, time_: slice) -> Any:
+        try:
+            item = next(self.__getitem__(time_))
+            del self[item[0]]
+            return item
+        except StopIteration:
+            return ()
+
+    def key_list(self, time_: slice):
+        if time_.start:
+            return tuple(i for i in self if i >= time_.start)
+        elif time_.stop:
+            return tuple(i for i in self if i <= time_.stop)
+        else:
+            return ()
+
+
+class OldUniqueSchedule(OldSchedule):
     def __init__(self, length: int = 1024):
         super().__init__()
         self.hashes: collections.deque = collections.deque(maxlen=length)
@@ -82,6 +130,14 @@ class UniqueSchedule(Schedule):
                     continue
         else:
             raise ValueError('Item must be float or tuple[float]')
+
+
+class UniqueSchedule(Schedule):
+    def __setitem__(self, time_: Union[float, int], value):
+        if value not in self.values():
+            super().__setitem__(time_, value)
+        else:
+            raise IndexError('Non-unique value')
 
 
 time_format: str = "%Y-%m-%d %H:%M:%S"

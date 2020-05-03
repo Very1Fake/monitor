@@ -65,7 +65,6 @@ class ThreadManager(NamedTuple):
 class Collector(NamedTuple):
     collector_tick: float = .5  # Delta time for queue manage (in seconds)
     collector_wait: float = 10  # Timeout to join() when turning off monitor (in seconds)
-    targets_hashes_size: int = 1024
     success_hashes_time: int = 172800  # How long save hashes of success targets
 
 
