@@ -16,42 +16,6 @@ class PrioritizedItem:
     content: Any = field(compare=False)
 
 
-class OldSchedule(dict):
-    def __setitem__(self, time_: float, value):
-        if isinstance(time_, float) or isinstance(time_, int):
-            super().__setitem__(round(time_, 7), value)
-        else:
-            raise KeyError('Key must be int or float')
-
-    def get_slice(self, time_) -> List[Tuple[float, Any]]:
-        return [i for i in self.items() if i[0] <= time_]
-
-    def get_slice_gen(self, time_) -> Generator[Tuple[float, Any], Any, None]:
-        return (i for i in self.items() if i[0] <= time_)
-
-    def pop_slice(self, time_) -> List[Tuple[str, dict]]:
-        result: List[Tuple[str, dict]] = [i for i in super().items() if i[0] <= time_]
-        for i in result:
-            self.__delitem__(i[0])
-        return result
-
-    def pop_item(self, time_) -> None:
-        if isinstance(time_, (float, int)):
-            self.__delitem__(time_)
-        elif isinstance(time_, (tuple, list)):
-            for i in time_:
-                if isinstance(i, float) or isinstance(i, int):
-                    self.__delitem__(i)
-                else:
-                    continue
-        else:
-            raise ValueError('Item must be float or tuple[float]')
-
-    def del_slice(self, time_) -> None:
-        for i in tuple(k for k in super().__iter__() if k <= time_):
-            self.__delitem__(i)
-
-
 class Schedule(dict):
     def __setitem__(self, time_: Union[float, int], value):
         if isinstance(time_, float) or isinstance(time_, int):
@@ -66,7 +30,7 @@ class Schedule(dict):
             elif time_.stop:
                 return (i for i in self.items() if i[0] <= time_.stop)
             else:
-                return ()
+                return []
         else:
             return super().__getitem__(time_)
 
@@ -77,8 +41,8 @@ class Schedule(dict):
         else:
             super().__delitem__(time_)
 
-    def pop(self, time_: Union[float, int, slice]) -> Tuple[Any]:
-        items = tuple(self.__getitem__(time_))
+    def pop(self, time_: Union[float, int, slice]) -> List[Any]:
+        items = list(self.__getitem__(time_))
         del self[time_]
         return items
 
@@ -90,46 +54,13 @@ class Schedule(dict):
         except StopIteration:
             return ()
 
-    def key_list(self, time_: slice):
+    def key_list(self, time_: slice) -> list:
         if time_.start:
-            return tuple(i for i in self if i >= time_.start)
+            return list(i for i in self if i >= time_.start)
         elif time_.stop:
-            return tuple(i for i in self if i <= time_.stop)
+            return list(i for i in self if i <= time_.stop)
         else:
-            return ()
-
-
-class OldUniqueSchedule(OldSchedule):
-    def __init__(self, length: int = 1024):
-        super().__init__()
-        self.hashes: collections.deque = collections.deque(maxlen=length)
-
-    def __setitem__(self, key, value):
-        if not hash(value) in self.hashes:
-            self.hashes.append(hash(value))
-        else:
-            raise IndexError('Non-unique value')
-        super().__setitem__(key, value)
-
-    def pop_slice(self, key) -> List[Tuple[str, dict]]:
-        result: List[Tuple[str, dict]] = [i for i in super().items() if i[0] <= key]
-        for i in result:
-            self.hashes.remove(self.__getitem__(i[0]))
-            self.__delitem__(i[0])
-        return result
-
-    def pop_item(self, key) -> None:
-        if isinstance(key, float) or isinstance(key, float):
-            self.__delitem__(key)
-        elif isinstance(key, tuple) or isinstance(key, list):
-            for i in key:
-                if isinstance(i, float) or isinstance(i, int):
-                    self.hashes.remove(hash(self.__getitem__(i)))
-                    self.__delitem__(i)
-                else:
-                    continue
-        else:
-            raise ValueError('Item must be float or tuple[float]')
+            return []
 
 
 class UniqueSchedule(Schedule):

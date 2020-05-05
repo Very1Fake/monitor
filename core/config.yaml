@@ -5,6 +5,7 @@ analytics:
   interval: 300
   path: reports
 api:
+  default: 1001
   priority_TInterval:
     - 100
     - 100

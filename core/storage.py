@@ -90,6 +90,7 @@ class Logger(NamedTuple):
 
 
 class API(NamedTuple):
+    default: int = 1001
     priority_TSmart: list = [10, 0]
     priority_TScheduled: list = [50, 0]
     priority_TInterval: list = [100, 100]  # First value is base priority, second value is range (0 for static priority)

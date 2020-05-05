@@ -3,7 +3,6 @@ import importlib
 import json
 import os
 import sys
-from _hashlib import HASH
 from types import ModuleType
 from typing import Dict, Any, Tuple
 
@@ -421,7 +420,7 @@ class ScriptManager:
         return True
 
     def hash(self) -> str:
-        hash_: HASH = hashlib.sha1(b'')
+        hash_: hashlib._Hash = hashlib.sha1(b'')
         for i in [i['hash'] for i in self.scripts.values()]:
             hash_.update(i.encode())
         return hash_.hexdigest()

@@ -2,7 +2,7 @@ import queue
 import threading
 import time
 import traceback
-from typing import Tuple, Dict, Type
+from typing import Tuple, Dict, Type, List
 
 import uctp
 import yaml
@@ -35,6 +35,10 @@ def refresh_success_hashes():
 
 
 class MonitorError(Exception):
+    pass
+
+
+class ResolverError(Exception):
     pass
 
 
@@ -95,8 +99,130 @@ class ThreadClass(threading.Thread):
             self.log.fatal(self._exception(code))
 
 
+class Resolver:
+    _log: logger.Logger
+    _insert_target_lock: threading.Lock
+
+    indices: library.Schedule
+    targets: library.UniqueSchedule
+
+    def __init__(self):
+        self._log = logger.Logger('Resolver')
+        self._insert_target_lock = threading.Lock()
+
+        self.indices = library.Schedule()
+        self.targets = library.UniqueSchedule()
+
+    @staticmethod
+    def target_priority(target: api.TargetType) -> int:
+        if isinstance(target, api.TSmart):
+            return storage.api.priority_TSmart[0] + target.reuse(storage.api.priority_TSmart[1])
+        elif isinstance(target, api.TScheduled):
+            return storage.api.priority_TScheduled[0] + target.reuse(storage.api.priority_TScheduled[1])
+        elif isinstance(target, api.TInterval):
+            return storage.api.priority_TInterval[0] + target.reuse(storage.api.priority_TInterval[1])
+        else:
+            return storage.api.default
+
+    def get_targets(self) -> List[api.TargetType]:
+        time_: float = time.time()
+        targets: list = []
+        if any(self.targets[:time_]):
+            for k, v in self.targets[:time_]:
+                if v.script in script_manager.scripts and v.script in script_manager.parsers:
+                    targets.append(v)
+                else:
+                    self._log.warn(codes.Code(30901, v))
+            del self.targets[:time_]
+        return targets
+
+    def insert_target(self, target: api.TargetType) -> None:
+        with self._insert_target_lock:
+            if target.hash() not in success_hashes.values():
+                try:
+                    if isinstance(target, api.TSmart):
+                        time_ = library.smart_extractor(
+                            library.smart_gen(target.timestamp, target.length, target.scatter),
+                            time.time()
+                        )
+                        if time_:  # TODO: Fix here (expired must be checked once)
+                            self.targets[time_] = target
+                        else:
+                            self._log.warn(f'Smart target expired: {target}')
+                    elif isinstance(target, api.TScheduled):
+                        self.targets[target.timestamp] = target
+                    elif isinstance(target, api.TInterval):
+                        self.targets[time.time() + target.interval] = target
+                    else:
+                        self._log.error(codes.Code(40902, target))
+                except ValueError:
+                    self._log.fatal_msg(codes.Code(30301, target))
+                except IndexError:
+                    self._log.test(f'Inserting non-unique target')
+
+    def execute_target(self) -> Tuple[int, str]:  # TODO: Combine in one function for new API
+        try:
+            target: api.TargetType = task_queue.get_nowait().content
+            if target.hash() in success_hashes.values():
+                raise ResolverError
+        except (queue.Empty, ResolverError):
+            return 0, ''
+
+        try:
+            ok, result = script_manager.execute_parser(target.script, 'execute', (target,))
+        except scripts.ScriptManagerError:
+            return 1, target.script
+
+        if ok:
+            if isinstance(result, api.SWaiting):
+                self.insert_target(result.target)
+                return 3, target.script
+            elif isinstance(result, api.SSuccess):
+                success_hashes[time.time() + storage.collector.success_hashes_time] = target.hash()
+                script_manager.event_handler.success_status(result)
+                return 4, target.script
+            elif isinstance(result, api.SFail):
+                script_manager.event_handler.fail_status(result)
+                return 5, target.script
+            else:
+                return 6, target.script
+        else:
+            return 2, target.script
+
+    def insert_index(self, index: api.IndexType, force: bool = False) -> None:  # TODO: Make `now` argument here
+        if isinstance(index, (api.IOnce, api.IInterval)):
+            if force:
+                self.indices[time.time()] = index
+            else:
+                if isinstance(index, api.IInterval):
+                    self.indices[time.time() + index.interval] = index
+        else:
+            if storage.main.production:
+                self._log.error(codes.Code(40901, index))
+            else:
+                self._log.fatal(CollectorError(codes.Code(40901, index)))
+
+    def execute_reindex(self) -> Tuple[int, str]:
+        try:
+            index = self.indices.pop_first(slice(time.time()))[1]
+        except IndexError:
+            return 0, ''
+
+        ok, targets = script_manager.execute_parser(index.script, 'targets', ())
+        if ok:
+            if isinstance(targets, (tuple, list)):
+                for i in targets:
+                    resolver.insert_target(i)
+                resolver.insert_index(index)
+                return 2, index.script
+            else:
+                return 3, index.script
+        else:
+            return 1, index.script
+
+
 task_queue: queue.PriorityQueue = queue.PriorityQueue(storage.queues.task_queue_size)
-target_queue: queue.Queue = queue.Queue(storage.queues.target_queue_size)
+resolver: Resolver = Resolver()
 server = uctp.peer.Peer(
     'monitor',
     RSA.import_key(open('./monitor.pem').read()),
@@ -110,51 +236,11 @@ server = uctp.peer.Peer(
 
 class Collector(ThreadClass):
     log: logger.Logger
-    schedule_indices: library.Schedule
-    schedule_targets: library.UniqueSchedule
     parsers_hash: str
 
     def __init__(self):
         super().__init__('Collector', CollectorError)
-        self.schedule_indices = library.Schedule()
-        self.schedule_targets = library.UniqueSchedule()
         self.parsers_hash = ''
-
-    def insert_index(self, index: api.IndexType, now: float, force: bool = False) -> None:
-        if isinstance(index, api.IOnce):
-            if force:
-                self.schedule_indices[now] = index
-        elif isinstance(index, api.IInterval):
-            self.schedule_indices[now + (0 if force else index.interval)] = index
-        else:
-            if storage.main.production:
-                self.log.error(codes.Code(40301, index))
-            else:
-                self.log.fatal(CollectorError(codes.Code(40301, index)))
-
-    def insert_target(self, target):
-        if not isinstance(target, (tuple, list)):
-            target = (target,)
-        for i in target:
-            if i.content_hash() not in success_hashes.values():
-                try:
-                    if isinstance(i, api.TSmart):
-                        time_ = library.smart_extractor(
-                            library.smart_gen(i.timestamp, i.length, i.scatter),
-                            time.time()
-                        )
-                        if time_:  # TODO: Fix here (expired must be checked once)
-                            self.schedule_targets[time_] = i
-                        else:
-                            self.log.warn(f'Smart target expired: {i}')
-                    elif isinstance(i, api.TScheduled):
-                        self.schedule_targets[i.timestamp] = i
-                    elif isinstance(i, api.TInterval):
-                        self.schedule_targets[time.time() + i.interval] = i
-                except ValueError:
-                    self.log.warn(codes.Code(30301, i))
-                except IndexError:
-                    self.log.test(f'Inserting non-unique target')
 
     def step_parsers_check(self) -> None:
         if script_manager.hash() != self.parsers_hash:
@@ -162,60 +248,21 @@ class Collector(ThreadClass):
             for i in script_manager.parsers:
                 ok, index = script_manager.execute_parser(i, 'index', ())
                 if ok:
-                    self.insert_index(index, time.time(), True)
+                    resolver.insert_index(index, True)
                 else:
                     self.log.error(codes.Code(40302, i))
             self.parsers_hash = script_manager.hash()
             self.log.info(codes.Code(20302))
 
-    def step_reindex(self) -> bool:
-        try:
-            id_, index = next(self.schedule_indices[:time.time()])
-            ok, targets = script_manager.execute_parser(index.script, 'targets', ())
-            if ok:
-                if isinstance(targets, (tuple, list)):
-                    self.log.debug(codes.Code(10301, f'{len(targets)}, {index.script}'))
-                    self.insert_target(targets)
-                else:
-                    if storage.main.production:
-                        self.log.error(codes.Code(40302, index.script))
-                    else:
-                        self.log.fatal(CollectorError((codes.Code(40302, index.script))))
-                self.insert_index(index, time.time())
-                del self.schedule_indices[id_]
-                return True
-            else:
-                self.log.error(codes.Code(40303, index.script))
-                return False
-        except StopIteration:
-            return False
-
-    def step_target_queue_check(self) -> None:
-        if not target_queue.empty():
-            try:
-                while True:
-                    self.insert_target(target_queue.get_nowait())
-            except queue.Empty:
-                return
-
     def step_send_tasks(self) -> None:
-        if any(self.schedule_targets[:time.time()]):
-            for k, v in self.schedule_targets.pop(slice(time.time())):
-                if v.script in script_manager.scripts and v.script in script_manager.parsers:
-                    try:
-                        if isinstance(v, api.TSmart):
-                            priority = storage.api.priority_TSmart[0] + v.reuse(storage.api.priority_TSmart[1])
-                        elif isinstance(v, api.TScheduled):
-                            priority = storage.api.priority_TScheduled[0] + v.reuse(storage.api.priority_TScheduled[1])
-                        elif isinstance(v, api.TInterval):
-                            priority = storage.api.priority_TInterval[0] + v.reuse(storage.api.priority_TInterval[1])
-                        else:
-                            priority = 1001
-                        task_queue.put(library.PrioritizedItem(priority, v), timeout=storage.queues.task_queue_put_wait)
-                    except queue.Full:
-                        self.log.warn(codes.Code(30302, v))
-                else:
-                    self.log.error(codes.Code(40304, v))
+        for i in resolver.get_targets():
+            try:
+                task_queue.put(
+                    library.PrioritizedItem(resolver.target_priority(i), i),
+                    timeout=storage.queues.task_queue_put_wait
+                )
+            except queue.Full:
+                self.log.warn(codes.Code(30302, i))
 
     def run(self) -> None:
         self.state = 1
@@ -225,8 +272,22 @@ class Collector(ThreadClass):
                 try:
                     del success_hashes[slice(time.time())]
                     self.step_parsers_check()
-                    self.step_reindex()
-                    self.step_target_queue_check()
+                    status, script = resolver.execute_reindex()
+
+                    if status == 1:
+                        if storage.main.production:
+                            self.log.error(f'Catalog execution failed ({script})')
+                        else:
+                            self.log.fatal(WorkerError(f'Catalog execution failed ({script})'))
+                    elif status == 2:
+                        self.log.info(f'Catalog updated ({script})')
+                    elif status == 3:
+                        if storage.main.production:
+                            self.log.error(f'Catalog execution failed ({script})')
+                        else:
+                            self.log.fatal(CollectorError(f'Catalog execution failed ({script})'))
+
+                    # self.step_target_queue_check()
                     self.step_send_tasks()
                 except Exception as e:
                     self.throw(codes.Code(50301, f'While working: {e.__class__.__name__}: {e.__str__()}'))
@@ -261,54 +322,29 @@ class Worker(ThreadClass):
         self.idle = 0
         self.start_time = time.time()
 
-    def execute(self, target: api.TargetType) -> bool:
-        self.log.debug(codes.Code(10401, target))
-        if target.content_hash() not in success_hashes.values():  # TODO: Optimize here
-            try:
-                ok, status = script_manager.execute_parser(target.script, 'execute', (target,))
-                if ok:
-                    if isinstance(status, api.SWaiting):
-                        self.log.debug(codes.Code(10402, status))
-                        try:
-                            target_queue.put(status.target, timeout=storage.queues.target_queue_put_wait)
-                        except queue.Full:
-                            self.log.warn(codes.Code(30402, status.target))
-                    elif isinstance(status, api.SSuccess):
-                        self.log.info(codes.Code(20401, status.result))
-                        success_hashes[time.time() + storage.collector.success_hashes_time] = target.content_hash()
-                        script_manager.event_handler.success_status(status)
-                    elif isinstance(status, api.SFail):
-                        self.log.warn(codes.Code(30401, status))
-                        script_manager.event_handler.fail_status(status)
-                        return False
-                    else:
-                        self.log.debug(codes.Code(10402, status))
-                        if storage.main.production:
-                            self.log.error(codes.Code(40401, target))
-                        else:
-                            self.log.fatal(CollectorError(codes.Code(40401, target)))
-                        return True
-                    return True
-                else:
-                    self.log.error(codes.Code(40402, target))
-                    return False
-            except scripts.ScriptManagerError:
-                self.log.error(codes.Code(40403, target))
-
     def run(self) -> None:
         self.state = 1
         while True:
             start: float = time.time()
             if self.state == 1:
                 try:
-                    target: library.PrioritizedItem = None
-                    try:
-                        target = task_queue.get_nowait()
-                    except queue.Empty:
-                        self.idle += 1
-                    if target:
-                        self.execute(target.content)
-                        self.idle = 0
+                    status, script = resolver.execute_target()
+
+                    if status == 1:
+                        self.log.error(f'Target lost in pipeline while executing ({script})')
+                    elif status == 2:
+                        if storage.main.production:
+                            self.log.error(f'Target execution failed ({script})')
+                        else:
+                            self.log.fatal(WorkerError(f'Target execution failed ({script})'))
+                    elif status == 3:
+                        self.log.debug(f'Target executed ({script})')
+                    elif status == 4:
+                        self.log.info(f'Successful target execution ({script})')
+                    elif status == 5:
+                        self.log.warn(f'Failed target execution ({script})')
+                    elif status == 6:
+                        self.log.warn(f'Unknown status received while executing target ({script})')
                 except Exception as e:
                     self.throw(codes.Code(50401, f'While working: {e.__class__.__name__}: {e.__str__()}'))
                     break
@@ -324,7 +360,7 @@ class Worker(ThreadClass):
                 self.log.info(codes.Code(20005))
                 break
             delta: float = time.time() - start
-            self.speed = round(1 / delta, 3) if self.idle == 0 else 0
+            self.speed = 0 if self.idle else round(1 / delta, 3)
             time.sleep(storage.worker.worker_tick - delta if storage.worker.worker_tick - delta >= 0 else 0)
 
 

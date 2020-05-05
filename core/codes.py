@@ -41,7 +41,7 @@ _20301 = 'Reindexing parsers started'
 _20302 = 'Reindexing parsers complete'
 
 # Worker (204xx)
-_20401 = 'Item available'
+_20401 = 'Success target execution'
 
 # ScriptManager (205xx)
 _20501 = 'Script loaded'
@@ -58,11 +58,11 @@ _20509 = 'Reloading all scripts complete'
 _20601 = 'Config loaded'
 _20602 = 'Config dumped'
 _20603 = 'Config does not loaded (must be dict)'
-_20604 = 'Skipping config (config not detected)'
-_20605 = 'Skipping config (bad config)'
-_20606 = 'Skipping config (script incompatible with core)'
-_20607 = 'Skipping config (ignored by config)'
-_20608 = 'Skipping config (script with this name is already indexed)'
+_20604 = 'Skipping script (config not detected)'
+_20605 = 'Skipping script (bad config)'
+_20606 = 'Skipping script (script incompatible with core)'
+_20607 = 'Skipping script (ignored by config)'
+_20608 = 'Skipping script (script with this name is already indexed)'
 _20609 = 'N script(s) indexed'
 
 # Logger (208xx)
@@ -87,6 +87,7 @@ _30302 = 'Target lost in pipeline'
 # Worker (304xx)
 _30401 = 'Target lost'
 _30402 = 'Target lost in pipeline'
+_30403 = 'Target execution failed'
 
 # ScriptManager (305xx)
 _30501 = 'Module not loaded'
@@ -101,6 +102,9 @@ _30507 = 'Max errors for script reached unloading'
 _30801 = 'Meaningless level change (changing to the same value)'
 _30802 = 'Meaningless mode change (changing to the same value)'
 _30803 = 'Meaningless time change (changing to the same value)'
+
+# Resolver (309xx)
+_30901 = 'Target lost (script not found)'
 
 # Errors (4xxxx)
 
@@ -127,6 +131,13 @@ _40504 = 'Can\'t reload script (script isn\'t loaded)'
 # Logger (408xx)
 _40801 = 'Can\'t change level (possible values (0, 1, 2, 3, 4, 5))'
 _40802 = 'Can\'t change mode (possible values (0, 1, 2, 3))'
+
+# Resolver (409xx)
+_40901 = 'Unknown index type (while inserting)'
+_40902 = 'Unknown target type (while inserting)'
+_40903 = 'Target lost in pipeline while executing'
+_40904 = 'Target execution failed'
+_40905 = 'Unknown status received while executing target'
 
 # Fatals (5xxxx)
 

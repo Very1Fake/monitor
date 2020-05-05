@@ -21,8 +21,8 @@ def load_success_hashes(force: bool = True) -> library.Schedule:
             for i in file.readlines():
                 j = i.split(':')
                 try:
-                    if 1 < j.__len__() < 3 and j[1] != '\n':
-                        hashes[float(j[0])] = int(j[1][:-1], 16)
+                    if j.__len__() == 2 and j[1] != '\n':
+                        hashes[float(j[0])] = bytes(bytearray.fromhex(j[1][:-1]))
                 except ValueError:
                     continue
             if force:
@@ -38,6 +38,6 @@ def dump_success_hashes(hashes: library.Schedule) -> bool:
     check()
     with open(storage.main.cache_path + '/success_hashes.cache', 'w+') as file:
         for i in hashes:
-            file.write(f'{i}:{hex(hashes[i])[2:]}\n')
+            file.write(f'{i}:{hashes[i].hex()}\n')
             file.flush()
     return True
