@@ -30,6 +30,8 @@ SizeType = TypeVar('SizeType', Tuple, Tuple[str], Tuple[Tuple[str]])
 FooterType = TypeVar('FooterType', Tuple, Tuple[str])
 
 currencies = {
+    'CAD': 10,
+    'HKD': 9,
     'PLN': 8,
     'BYN': 7,
     'UAH': 6,
