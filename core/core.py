@@ -114,6 +114,15 @@ class Resolver:
         self.targets = library.UniqueSchedule()
 
     @staticmethod
+    def index_priority(index: api.IndexType) -> int:
+        if isinstance(index, api.IOnce):
+            return storage.api.priority_IOnce
+        elif isinstance(index, api.IInterval):
+            return storage.api.priority_IInterval
+        else:
+            return storage.api.priority_interval_default
+
+    @staticmethod
     def target_priority(target: api.TargetType) -> int:
         if isinstance(target, api.TSmart):
             return storage.api.priority_TSmart[0] + target.reuse(storage.api.priority_TSmart[1])
@@ -122,7 +131,7 @@ class Resolver:
         elif isinstance(target, api.TInterval):
             return storage.api.priority_TInterval[0] + target.reuse(storage.api.priority_TInterval[1])
         else:
-            return storage.api.default
+            return storage.api.priority_target_default
 
     def get_targets(self) -> List[api.TargetType]:
         time_: float = time.time()
@@ -162,7 +171,7 @@ class Resolver:
 
     def execute_target(self) -> Tuple[int, str]:  # TODO: Combine in one function for new API
         try:
-            target: api.TargetType = task_queue.get_nowait().content
+            target: api.TargetType = target_queue.get_nowait().content
             if target.hash() in success_hashes.values():
                 raise ResolverError
         except (queue.Empty, ResolverError):
@@ -202,18 +211,18 @@ class Resolver:
             else:
                 self._log.fatal(CollectorError(codes.Code(40901, index)))
 
-    def execute_reindex(self) -> Tuple[int, str]:
+    def execute_index(self) -> Tuple[int, str]:  # TODO: Combine in one function for new API
         try:
-            index = self.indices.pop_first(slice(time.time()))[1]
-        except IndexError:
+            index: api.IndexType = index_queue.get_nowait().content
+        except queue.Empty:
             return 0, ''
 
         ok, targets = script_manager.execute_parser(index.script, 'targets', ())
         if ok:
             if isinstance(targets, (tuple, list)):
                 for i in targets:
-                    resolver.insert_target(i)
-                resolver.insert_index(index)
+                    self.insert_target(i)
+                self.insert_index(index)
                 return 2, index.script
             else:
                 return 3, index.script
@@ -221,7 +230,8 @@ class Resolver:
             return 1, index.script
 
 
-task_queue: queue.PriorityQueue = queue.PriorityQueue(storage.queues.task_queue_size)
+index_queue: queue.PriorityQueue = queue.PriorityQueue(storage.queues.index_queue_size)
+target_queue: queue.PriorityQueue = queue.PriorityQueue(storage.queues.target_queue_size)
 resolver: Resolver = Resolver()
 server = uctp.peer.Peer(
     'monitor',
@@ -254,41 +264,32 @@ class Collector(ThreadClass):
             self.parsers_hash = script_manager.hash()
             self.log.info(codes.Code(20302))
 
-    def step_send_tasks(self) -> None:
-        for i in resolver.get_targets():
-            try:
-                task_queue.put(
-                    library.PrioritizedItem(resolver.target_priority(i), i),
-                    timeout=storage.queues.task_queue_put_wait
-                )
-            except queue.Full:
-                self.log.warn(codes.Code(30302, i))
-
     def run(self) -> None:
         self.state = 1
         while True:
             start: float = time.time()
             if self.state == 1:  # Active state
                 try:
-                    del success_hashes[slice(time.time())]
+                    del success_hashes[:time.time()]
                     self.step_parsers_check()
-                    status, script = resolver.execute_reindex()
 
-                    if status == 1:
-                        if storage.main.production:
-                            self.log.error(f'Catalog execution failed ({script})')
-                        else:
-                            self.log.fatal(WorkerError(f'Catalog execution failed ({script})'))
-                    elif status == 2:
-                        self.log.info(f'Catalog updated ({script})')
-                    elif status == 3:
-                        if storage.main.production:
-                            self.log.error(f'Catalog execution failed ({script})')
-                        else:
-                            self.log.fatal(CollectorError(f'Catalog execution failed ({script})'))
+                    for i in resolver.indices.pop(slice(time.time())):
+                        try:
+                            index_queue.put(
+                                library.PrioritizedItem(resolver.index_priority(i[1]), i[1]),
+                                timeout=storage.queues.index_queue_size
+                            )
+                        except queue.Full:
+                            self.log.warn(codes.Code(30302, i))
 
-                    # self.step_target_queue_check()
-                    self.step_send_tasks()
+                    for i in resolver.get_targets():
+                        try:
+                            target_queue.put(
+                                library.PrioritizedItem(resolver.target_priority(i), i),
+                                timeout=storage.queues.target_queue_put_wait
+                            )
+                        except queue.Full:
+                            self.log.warn(codes.Code(30302, i))
                 except Exception as e:
                     self.throw(codes.Code(50301, f'While working: {e.__class__.__name__}: {e.__str__()}'))
                     break
@@ -304,23 +305,41 @@ class Collector(ThreadClass):
                 self.log.info(codes.Code(20005))
                 break
             delta: float = time.time() - start
-            time.sleep(storage.collector.collector_tick - delta if storage.collector.collector_tick - delta >= 0 else 0)
+            time.sleep(storage.collector.tick - delta if storage.collector.tick - delta >= 0 else 0)
 
 
 class Worker(ThreadClass):
+    _name: str = 'Worker'
+
     id: int
     additional: bool
     speed: float
     idle: int
     start_time: float
 
-    def __init__(self, id_: int, additional: bool = False, postfix: str = ''):
-        super().__init__(f'Worker-{id_}{postfix}', WorkerError)
+    def __init__(self, id_: int, name: str = ''):
+        super().__init__(f'{name if name else self._name}-{id_}', WorkerError)
         self.id = id_
-        self.additional = additional
         self.speed = .0
         self.idle = 0
         self.start_time = time.time()
+
+    def log_target_exec(self, status: int, script: str) -> None:
+        if status == 1:
+            self.log.error(f'Target lost in pipeline while executing (script "{script}" not found)')
+        elif status == 2:
+            if storage.main.production:
+                self.log.error(f'Target execution failed ({script})')
+            else:
+                self.log.fatal(WorkerError(f'Target execution failed ({script})'))
+        elif status == 3:
+            self.log.debug(f'Target executed ({script})')
+        elif status == 4:
+            self.log.info(f'Successful target execution ({script})')
+        elif status == 5:
+            self.log.warn(f'Failed target execution ({script})')
+        elif status == 6:
+            self.log.warn(f'Unknown status received while executing target ({script})')
 
     def run(self) -> None:
         self.state = 1
@@ -328,23 +347,7 @@ class Worker(ThreadClass):
             start: float = time.time()
             if self.state == 1:
                 try:
-                    status, script = resolver.execute_target()
-
-                    if status == 1:
-                        self.log.error(f'Target lost in pipeline while executing ({script})')
-                    elif status == 2:
-                        if storage.main.production:
-                            self.log.error(f'Target execution failed ({script})')
-                        else:
-                            self.log.fatal(WorkerError(f'Target execution failed ({script})'))
-                    elif status == 3:
-                        self.log.debug(f'Target executed ({script})')
-                    elif status == 4:
-                        self.log.info(f'Successful target execution ({script})')
-                    elif status == 5:
-                        self.log.warn(f'Failed target execution ({script})')
-                    elif status == 6:
-                        self.log.warn(f'Unknown status received while executing target ({script})')
+                    self.log_target_exec(*resolver.execute_target())
                 except Exception as e:
                     self.throw(codes.Code(50401, f'While working: {e.__class__.__name__}: {e.__str__()}'))
                     break
@@ -361,26 +364,72 @@ class Worker(ThreadClass):
                 break
             delta: float = time.time() - start
             self.speed = 0 if self.idle else round(1 / delta, 3)
-            time.sleep(storage.worker.worker_tick - delta if storage.worker.worker_tick - delta >= 0 else 0)
+            time.sleep(storage.worker.tick - delta if storage.worker.tick - delta >= 0 else 0)
+
+
+class IndexWorker(Worker):
+    _name: str = 'IndexWorker'
+
+    def __init__(self, id_: int, name: str = ''):
+        super().__init__(id_, name if name else self._name)
+
+    def run(self):
+        self.state = 1
+        while True:
+            start: float = time.time()
+            if self.state == 1:
+                try:
+                    status, script = resolver.execute_index()
+
+                    if status == 1:
+                        if storage.main.production:
+                            self.log.error(f'Catalog execution failed ({script})')
+                        else:
+                            self.log.fatal(WorkerError(f'Catalog execution failed ({script})'))
+                    elif status == 2:
+                        self.log.info(f'Catalog updated ({script})')
+                    elif status == 3:
+                        if storage.main.production:
+                            self.log.error(f'Catalog execution failed ({script})')
+                        else:
+                            self.log.fatal(CollectorError(f'Catalog execution failed ({script})'))
+
+                    if status < 2:
+                        status, script = resolver.execute_target()
+                        self.log_target_exec(status, script)
+                except Exception as e:
+                    self.throw(codes.Code(50401, f'While working: {e.__class__.__name__}: {e.__str__()}'))
+                    break
+            elif self.state == 2:  # Pausing state
+                self.log.info(codes.Code(20002))
+                self.state = 3
+            elif self.state == 3:  # Paused state
+                pass
+            elif self.state == 4:  # Resuming state
+                self.log.info(codes.Code(20003))
+                self.state = 1
+            elif self.state == 5:  # Stopping state
+                self.log.info(codes.Code(20005))
+                break
+            delta: float = time.time() - start
+            self.speed = 0 if self.idle else round(1 / delta, 3)
+            time.sleep(storage.index_worker.tick - delta if storage.index_worker.tick - delta >= 0 else 0)
 
 
 class ThreadManager(ThreadClass):
     workers_increment_id: int
+    index_workers_increment_id: int
     workers: Dict[int, Worker]
+    index_workers: Dict[int, Worker]
     collector: Collector
 
     def __init__(self) -> None:
         super().__init__('ThreadManager', ThreadManagerError)
         self.workers_increment_id = 0
+        self.index_workers_increment_id = 0
         self.workers = {}
+        self.index_workers = {}
         self.collector = None
-
-    def workers_count(self, additional: bool = False) -> int:
-        count = 0
-        for i in self.workers.values():
-            if i.additional == additional:
-                count += 1
-        return count
 
     def check_collector(self) -> None:
         if not self.collector:
@@ -395,7 +444,7 @@ class ThreadManager(ThreadClass):
                 self.collector = None
 
     def check_workers(self) -> None:
-        if self.workers_count() < storage.worker.workers_count:
+        if len(self.workers) < storage.worker.count:
             self.workers[self.workers_increment_id] = Worker(self.workers_increment_id)
             self.log.info(codes.Code(20203, f'Worker-{self.workers_increment_id}'))
             self.workers_increment_id += 1
@@ -408,14 +457,33 @@ class ThreadManager(ThreadClass):
                     self.log.warn(codes.Code(30202, f'{v.name}'))
                     del self.workers[v.id]
 
+    def check_index_workers(self) -> None:
+        if len(self.index_workers) < storage.index_worker.count:
+            self.index_workers[self.index_workers_increment_id] = IndexWorker(self.index_workers_increment_id)
+            self.log.info(codes.Code(20205, f'IndexWorker-{self.index_workers_increment_id}'))
+            self.index_workers_increment_id += 1
+        for v in tuple(self.index_workers.values()):
+            if not v.is_alive():
+                try:
+                    v.start()
+                    self.log.info(codes.Code(20206, f'{v.name}'))
+                except RuntimeError:
+                    self.log.warn(codes.Code(30203, f'{v.name}'))
+                    del self.index_workers[v.id]
+
     def stop_threads(self) -> None:
         for i in self.workers.values():
             i.state = 5
         for i in tuple(self.workers):
-            self.workers[i].join(storage.worker.worker_wait)
+            self.workers[i].join(storage.worker.wait)
             del self.workers[i]
+        for i in self.index_workers.values():
+            i.state = 5
+        for i in tuple(self.index_workers):
+            self.index_workers[i].join(storage.index_worker.wait)
+            del self.index_workers[i]
         self.collector.state = 5
-        self.collector.join(storage.collector.collector_wait)
+        self.collector.join(storage.collector.wait)
         self.collector = None
 
     def run(self) -> None:
@@ -426,6 +494,7 @@ class ThreadManager(ThreadClass):
                 if self.state == 1:
                     self.check_collector()
                     self.check_workers()
+                    self.check_index_workers()
                 elif self.state == 2:  # Pausing state
                     self.log.info(codes.Code(20002))
                     self.state = 3
@@ -440,8 +509,8 @@ class ThreadManager(ThreadClass):
                     self.log.info(codes.Code(20005))
                     break
                 delta: float = time.time() - start
-                time.sleep(storage.thread_manager.thread_manager_tick - delta if
-                           storage.thread_manager.thread_manager_tick - delta >= 0 else 0)
+                time.sleep(storage.thread_manager.tick - delta if
+                           storage.thread_manager.tick - delta >= 0 else 0)
             except Exception as e:
                 self.log.fatal_msg(codes.Code(50201, f'{e.__class__.__name__}: {e.__str__()}'), traceback.format_exc())
                 self.stop_threads()
@@ -450,7 +519,7 @@ class ThreadManager(ThreadClass):
 
     def close(self) -> float:
         self.state = 5
-        return storage.collector.collector_wait + self.workers.__len__() * (storage.worker.worker_wait + 1)
+        return storage.collector.wait + len(self.workers) * (storage.worker.wait + 1) + len(self.index_workers) * (storage.index_worker.wait + 1)
 
 
 class Main:

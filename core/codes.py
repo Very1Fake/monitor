@@ -35,6 +35,8 @@ _20201 = 'Collector initialized'
 _20202 = 'Collector started'
 _20203 = 'Worker initialized'
 _20204 = 'Worker started'
+_20205 = 'IndexWorker initialized'
+_20206 = 'IndexWorker started'
 
 # Collector (203xx)
 _20301 = 'Reindexing parsers started'
@@ -79,6 +81,7 @@ _30000 = 'Test warning'
 # ThreadManager (302xx)
 _30201 = 'Collector was unexpectedly stopped'
 _30202 = 'Worker was unexpectedly stopped'
+_30203 = 'IndexWorker was unexpectedly stopped'
 
 # Collector (303xx)
 _30301 = 'Target lost while inserting in schedule'
