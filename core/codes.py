@@ -5,7 +5,7 @@ import struct
 # System (100xx)
 _10000 = 'Test debug'
 
-# Collector (103xx)
+# Pipe (103xx)
 _10301 = 'N targets recived form script'
 
 # Worker (104xx)
@@ -31,14 +31,14 @@ _20105 = 'Saving success hashes complete'
 _20106 = 'Offline'
 
 # ThreadManager (202xx)
-_20201 = 'Collector initialized'
-_20202 = 'Collector started'
+_20201 = 'Pipe initialized'
+_20202 = 'Pipe started'
 _20203 = 'Worker initialized'
 _20204 = 'Worker started'
 _20205 = 'IndexWorker initialized'
 _20206 = 'IndexWorker started'
 
-# Collector (203xx)
+# Pipe (203xx)
 _20301 = 'Reindexing parsers started'
 _20302 = 'Reindexing parsers complete'
 
@@ -79,11 +79,11 @@ _20804 = 'Time changed to local'
 _30000 = 'Test warning'
 
 # ThreadManager (302xx)
-_30201 = 'Collector was unexpectedly stopped'
+_30201 = 'Pipe was unexpectedly stopped'
 _30202 = 'Worker was unexpectedly stopped'
 _30203 = 'IndexWorker was unexpectedly stopped'
 
-# Collector (303xx)
+# Pipe (303xx)
 _30301 = 'Target lost while inserting in schedule'
 _30302 = 'Target lost in pipeline'
 
@@ -114,7 +114,7 @@ _30901 = 'Target lost (script not found)'
 # System (400xx)
 _40000 = 'Test error'
 
-# Collector (403xx)
+# Pipe (403xx)
 _40301 = 'Unknown index'
 _40302 = 'Wrong target list received from script'
 _40303 = 'Parser execution failed'
@@ -153,7 +153,7 @@ _50101 = 'ThreadManager unexpectedly has turned off'
 # ThreadManager (502xx)
 _50201 = 'Exception raised, emergency stop initiated'
 
-# Collector (503xx)
+# Pipe (503xx)
 _50301 = 'Unexpectedly has turned off'
 
 # Worker (504xx)

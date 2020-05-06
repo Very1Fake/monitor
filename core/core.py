@@ -50,6 +50,10 @@ class CollectorError(Exception):
     pass
 
 
+class PipeError(Exception):
+    pass
+
+
 class WorkerError(Exception):
     pass
 
@@ -187,7 +191,7 @@ class Resolver:
                 self.insert_target(result.target)
                 return 3, target.script
             elif isinstance(result, api.SSuccess):
-                success_hashes[time.time() + storage.collector.success_hashes_time] = target.hash()
+                success_hashes[time.time() + storage.pipe.success_hashes_time] = target.hash()
                 script_manager.event_handler.success_status(result)
                 return 4, target.script
             elif isinstance(result, api.SFail):
@@ -244,25 +248,12 @@ server = uctp.peer.Peer(
 )
 
 
-class Collector(ThreadClass):
-    log: logger.Logger
+class Pipe(ThreadClass):
     parsers_hash: str
 
     def __init__(self):
-        super().__init__('Collector', CollectorError)
+        super().__init__('Pipe', PipeError)
         self.parsers_hash = ''
-
-    def step_parsers_check(self) -> None:
-        if script_manager.hash() != self.parsers_hash:
-            self.log.info(codes.Code(20301))
-            for i in script_manager.parsers:
-                ok, index = script_manager.execute_parser(i, 'index', ())
-                if ok:
-                    resolver.insert_index(index, True)
-                else:
-                    self.log.error(codes.Code(40302, i))
-            self.parsers_hash = script_manager.hash()
-            self.log.info(codes.Code(20302))
 
     def run(self) -> None:
         self.state = 1
@@ -270,10 +261,20 @@ class Collector(ThreadClass):
             start: float = time.time()
             if self.state == 1:  # Active state
                 try:
-                    del success_hashes[:time.time()]
-                    self.step_parsers_check()
+                    del success_hashes[:time.time()]  # Cleanup expired hashes
 
-                    for i in resolver.indices.pop(slice(time.time())):
+                    if script_manager.hash() != self.parsers_hash:  # Check for scripts (loaded/unloaded)
+                        self.log.info('Parsers reindexing started')
+                        for i in script_manager.parsers:
+                            ok, index = script_manager.execute_parser(i, 'index', ())
+                            if ok:
+                                resolver.insert_index(index, True)
+                            else:
+                                self.log.error(f'Reindexing failed ({i})')
+                        self.parsers_hash = script_manager.hash()
+                        self.log.info('Parsers reindexing complete')
+
+                    for i in resolver.indices.pop(slice(time.time())):  # Send indices
                         try:
                             index_queue.put(
                                 library.PrioritizedItem(resolver.index_priority(i[1]), i[1]),
@@ -282,7 +283,7 @@ class Collector(ThreadClass):
                         except queue.Full:
                             self.log.warn(codes.Code(30302, i))
 
-                    for i in resolver.get_targets():
+                    for i in resolver.get_targets():  # Send targets
                         try:
                             target_queue.put(
                                 library.PrioritizedItem(resolver.target_priority(i), i),
@@ -290,6 +291,7 @@ class Collector(ThreadClass):
                             )
                         except queue.Full:
                             self.log.warn(codes.Code(30302, i))
+
                 except Exception as e:
                     self.throw(codes.Code(50301, f'While working: {e.__class__.__name__}: {e.__str__()}'))
                     break
@@ -305,7 +307,7 @@ class Collector(ThreadClass):
                 self.log.info(codes.Code(20005))
                 break
             delta: float = time.time() - start
-            time.sleep(storage.collector.tick - delta if storage.collector.tick - delta >= 0 else 0)
+            time.sleep(storage.pipe.tick - delta if storage.pipe.tick - delta >= 0 else 0)
 
 
 class Worker(ThreadClass):
@@ -421,7 +423,7 @@ class ThreadManager(ThreadClass):
     index_workers_increment_id: int
     workers: Dict[int, Worker]
     index_workers: Dict[int, Worker]
-    collector: Collector
+    pipe: Pipe
 
     def __init__(self) -> None:
         super().__init__('ThreadManager', ThreadManagerError)
@@ -429,19 +431,19 @@ class ThreadManager(ThreadClass):
         self.index_workers_increment_id = 0
         self.workers = {}
         self.index_workers = {}
-        self.collector = None
+        self.pipe = None
 
-    def check_collector(self) -> None:
-        if not self.collector:
-            self.collector = Collector()
+    def check_pipe(self) -> None:
+        if not self.pipe:
+            self.pipe = Pipe()
             self.log.info(codes.Code(20201))
-        if not self.collector.is_alive():
+        if not self.pipe.is_alive():
             try:
-                self.collector.start()
+                self.pipe.start()
                 self.log.info(codes.Code(20202))
             except RuntimeError:
                 self.log.warn(codes.Code(30201))
-                self.collector = None
+                self.pipe = None
 
     def check_workers(self) -> None:
         if len(self.workers) < storage.worker.count:
@@ -482,9 +484,9 @@ class ThreadManager(ThreadClass):
         for i in tuple(self.index_workers):
             self.index_workers[i].join(storage.index_worker.wait)
             del self.index_workers[i]
-        self.collector.state = 5
-        self.collector.join(storage.collector.wait)
-        self.collector = None
+        self.pipe.state = 5
+        self.pipe.join(storage.pipe.wait)
+        self.pipe = None
 
     def run(self) -> None:
         self.state = 1
@@ -492,7 +494,7 @@ class ThreadManager(ThreadClass):
             try:
                 start: float = time.time()
                 if self.state == 1:
-                    self.check_collector()
+                    self.check_pipe()
                     self.check_workers()
                     self.check_index_workers()
                 elif self.state == 2:  # Pausing state
@@ -519,7 +521,7 @@ class ThreadManager(ThreadClass):
 
     def close(self) -> float:
         self.state = 5
-        return storage.collector.wait + len(self.workers) * (storage.worker.wait + 1) + len(self.index_workers) * (storage.index_worker.wait + 1)
+        return storage.pipe.wait + len(self.workers) * (storage.worker.wait + 1) + len(self.index_workers) * (storage.index_worker.wait + 1)
 
 
 class Main:

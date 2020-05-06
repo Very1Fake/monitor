@@ -18,7 +18,7 @@ api:
     - 0
   priority_interval_default: 100
   priority_target_default: 1001
-collector:
+pipe:
   success_hashes_time: 604800
   tick: 0.5
   wait: 10
