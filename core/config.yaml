@@ -5,6 +5,8 @@ analytics:
   interval: 300
   path: reports
 api:
+  priority_IInterval: 50
+  priority_IOnce: 10
   priority_TInterval:
     - 100
     - 100
@@ -14,29 +16,33 @@ api:
   priority_TSmart:
     - 10
     - 0
-collector:
-  collector_tick: 0.5
-  collector_wait: 10
+  priority_interval_default: 100
+  priority_target_default: 1001
+pipe:
   success_hashes_time: 604800
-  targets_hashes_size: 2048
+  tick: 0.5
+  wait: 10
+index_worker:
+  count: 5
+  tick: 1
+  wait: 7
 logger:
-  log_level: 4
-  log_message_content: 1
-  log_mode: 1
-  log_utc_time: true
+  level: 4
+  message_content: 2
+  mode: 1
+  utc_time: true
 main:
   cache_path: .cache
   logs_path: logs
   production: false
 queues:
+  index_queue_put_wait: 8
+  index_queue_size: 256
   target_queue_put_wait: 8
   target_queue_size: 1024
-  task_queue_put_wait: 8
-  task_queue_size: 1024
 thread_manager:
-  thread_manager_tick: 1
+  tick: 1
 worker:
-  worker_tick: 1
-  worker_wait: 5
-  workers_count: 3
-  workers_proportion: 1.5
+  count: 5
+  tick: 1
+  wait: 5

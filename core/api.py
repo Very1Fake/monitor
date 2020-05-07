@@ -30,6 +30,9 @@ SizeType = TypeVar('SizeType', Tuple, Tuple[str], Tuple[Tuple[str]])
 FooterType = TypeVar('FooterType', Tuple, Tuple[str])
 
 currencies = {
+    'AUD': 11,
+    'CAD': 10,
+    'HKD': 9,
     'PLN': 8,
     'BYN': 7,
     'UAH': 6,
@@ -107,8 +110,15 @@ class Result:
 # Indexing
 
 
+@dataclass
 class Index(abc.ABC):
-    pass
+    script: str
+
+    def hash(self) -> bytes:
+        return hashlib.blake2s(self.script.encode()).digest()
+
+    def __hash__(self) -> int:
+        return hash(self.hash())
 
 
 IndexType = TypeVar('IndexType', bound=Index)
@@ -116,14 +126,11 @@ IndexType = TypeVar('IndexType', bound=Index)
 
 @dataclass
 class IOnce(Index):
-    __slots__ = ('script',)
-    script: str
+    pass
 
 
 @dataclass
 class IInterval(Index):
-    __slots__ = ('script', 'interval')
-    script: str
     interval: float
 
 
@@ -145,10 +152,15 @@ class Target(abc.ABC):
                 self.reused += 1
         return self.reused
 
-    def content_hash(self) -> int:
-        return int(hashlib.sha1(
-            self.script.encode() + self.data.__repr__().encode() + self.name.encode()
-        ).hexdigest(), 16)
+    def hash(self) -> bytes:
+        return hashlib.blake2s(
+            self.script.encode() +
+            (self.data.encode() if isinstance(self.data, (str, bytes, bytearray)) else self.data.__repr__().encode()) +
+            self.name.encode()
+        ).digest()
+
+    def __hash__(self) -> int:
+        return hash(self.hash())
 
 
 TargetType = TypeVar('TargetType', bound=Target)
@@ -158,26 +170,10 @@ TargetType = TypeVar('TargetType', bound=Target)
 class TInterval(Target):
     interval: int
 
-    def hash(self) -> int:
-        return int(hashlib.sha1(
-            self.script.encode() + self.data.__repr__().encode() + str(self.interval).encode() + self.name.encode()
-        ).hexdigest(), 16)
-
-    def __hash__(self) -> int:
-        return hash(self.hash())
-
 
 @dataclass
 class TScheduled(Target):
     timestamp: float
-
-    def hash(self) -> int:
-        return int(hashlib.sha1(
-            self.script.encode() + self.data.__repr__().encode() + str(self.timestamp).encode() + self.name.encode()
-        ).hexdigest(), 16)
-
-    def __hash__(self) -> int:
-        return hash(self.hash())
 
 
 @dataclass
@@ -185,15 +181,6 @@ class TSmart(Target):
     length: int
     scatter: int
     timestamp: float
-
-    def hash(self) -> int:
-        return int(hashlib.sha1(
-            self.script.encode() + self.data.__repr__().encode() + str(self.length).encode() +
-            str(self.scatter).encode() + str(self.timestamp).encode() + self.name.encode()
-        ).hexdigest(), 16)
-
-    def __hash__(self) -> int:
-        return hash(self.hash())
 
 
 # Status classes
