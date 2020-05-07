@@ -38,85 +38,88 @@ class Logger:
         else:
             return msg
 
-    def print(self, type_: int, msg: Union[str, codes.Code]) -> None:
+    def print(self, type_: int, msg: Union[str, codes.Code], parent: str = '') -> None:
         print(
             f"[{lib.get_time(storage.logger.utc_time)}] [{colored(*self.types[type_])}] "
-            f"[{self.name}]: {self.format_msg(msg)}"
+            f"[{f'{parent}>' if parent else ''}{self.name}]: {self.format_msg(msg)}"
         )
 
-    def write(self, type_: int, msg: Union[str, codes.Code]) -> None:
+    def write(self, type_: int, msg: Union[str, codes.Code], parent: str = '') -> None:
         log_file.write(
             f"[{lib.get_time(storage.logger.utc_time)}] [{self.types[type_][0]}] "
-            f"[{self.name}]: {self.format_msg(msg)}\n"
+            f"[{f'{parent}>' if parent else ''}{self.name}]: {self.format_msg(msg)}\n"
         )
         log_file.flush()
 
-    def test(self, msg: Union[str, codes.Code]) -> bool:
+    def test(self, msg: Union[str, codes.Code], parent: str = '') -> bool:
         if storage.logger.level >= 5:
             if storage.logger.mode == 1 or storage.logger.mode == 3:
-                self.print(5, msg)
+                self.print(5, msg, parent)
             if storage.logger.mode == 2 or storage.logger.mode == 3:
-                self.write(5, msg)
+                self.write(5, msg, parent)
             return True
         return False
 
-    def debug(self, msg: Union[str, codes.Code]) -> bool:
+    def debug(self, msg: Union[str, codes.Code], parent: str = '') -> bool:
         if storage.logger.level >= 4:
             if storage.logger.mode == 1 or storage.logger.mode == 3:
-                self.print(4, msg)
+                self.print(4, msg, parent)
             if storage.logger.mode == 2 or storage.logger.mode == 3:
-                self.write(4, msg)
+                self.write(4, msg, parent)
             return True
         return False
 
-    def info(self, msg: Union[str, codes.Code]) -> bool:
+    def info(self, msg: Union[str, codes.Code], parent: str = '') -> bool:
         if storage.logger.level >= 3:
             if storage.logger.mode == 1 or storage.logger.mode == 3:
-                self.print(3, msg)
+                self.print(3, msg, parent)
             if storage.logger.mode == 2 or storage.logger.mode == 3:
-                self.write(3, msg)
+                self.write(3, msg, parent)
             return True
         return False
 
-    def warn(self, msg: Union[str, codes.Code]) -> bool:
+    def warn(self, msg: Union[str, codes.Code], parent: str = '') -> bool:
         if storage.logger.level >= 2:
             if storage.logger.mode == 1 or storage.logger.mode == 3:
-                self.print(2, msg)
+                self.print(2, msg, parent)
             if storage.logger.mode == 2 or storage.logger.mode == 3:
-                self.write(2, msg)
+                self.write(2, msg, parent)
             return True
         return False
 
-    def error(self, msg: Union[str, codes.Code]) -> bool:
+    def error(self, msg: Union[str, codes.Code], parent: str = '') -> bool:
         if storage.logger.level >= 1:
             if storage.logger.mode == 1 or storage.logger.mode == 3:
-                self.print(1, msg)
+                self.print(1, msg, parent)
             if storage.logger.mode == 2 or storage.logger.mode == 3:
-                self.write(1, msg)
+                self.write(1, msg, parent)
             return True
         return False
 
-    def fatal_msg(self, msg: Union[str, codes.Code], traceback_: str = '') -> bool:
+    def fatal_msg(self, msg: Union[str, codes.Code], traceback_: str = '', parent: str = '') -> bool:
         if storage.logger.mode == 1 or storage.logger.mode == 3:
             print(colored(
-                f"[{lib.get_time(storage.logger.utc_time)}] [FATAL] [{self.name}]: {self.format_msg(msg)}",
+                f"[{lib.get_time(storage.logger.utc_time)}] [FATAL] [{f'{parent}>' if parent else ''}{self.name}]: "
+                f"{self.format_msg(msg)}",
                 'red',
                 attrs=['reverse']
             ) + f"\n{'=' * 32}\n{traceback_}\n{'=' * 32}" if traceback_ else '')
         if storage.logger.mode == 2 or storage.logger.mode == 3:
-            self.write(0, self.format_msg(msg) + f"\n{'=' * 32}\n{traceback_}\n{'=' * 32}" if traceback_ else '')
+            self.write(0, self.format_msg(msg) + f"\n{'=' * 32}\n{traceback_}\n{'=' * 32}" if traceback_ else '',
+                       parent)
         return True
 
-    def fatal(self, e: Exception, from_: Exception = None):
+    def fatal(self, e: Exception, from_: Exception = None, parent: str = ''):
         if storage.logger.mode == 1 or storage.logger.mode == 3:
             print(colored(
-                f"[{lib.get_time(storage.logger.utc_time)}] [FATAL] [{self.name}]:   "
+                f"[{lib.get_time(storage.logger.utc_time)}] [FATAL] [{f'{parent}>' if parent else ''}{self.name}]: "
                 f"{e.__class__.__name__}: {e.__str__()}",
                 'red',
                 attrs=['reverse']
             ) + f"\n{'=' * 32}\n{traceback.format_exc()}\n{'=' * 32}")
         if storage.logger.mode == 2 or storage.logger.mode == 3:
-            self.write(0, f"  {e.__class__.__name__}: {e.__str__()}\n{'=' * 32}\n{traceback.format_exc()}\n{'=' * 32}")
+            self.write(0, f"  {e.__class__.__name__}: {e.__str__()}\n{'=' * 32}\n{traceback.format_exc()}\n{'=' * 32}",
+                       parent)
             log_file.flush()
         if from_:
             raise e from from_

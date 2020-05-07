@@ -23,7 +23,7 @@ pipe:
   tick: 0.5
   wait: 10
 index_worker:
-  count: 3
+  count: 5
   tick: 1
   wait: 7
 logger:
@@ -43,6 +43,6 @@ queues:
 thread_manager:
   tick: 1
 worker:
-  count: 3
+  count: 5
   tick: 1
   wait: 5

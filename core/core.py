@@ -58,6 +58,10 @@ class WorkerError(Exception):
     pass
 
 
+class IndexWorkerError(Exception):
+    pass
+
+
 class StateError(Exception):
     pass
 
@@ -111,7 +115,7 @@ class Resolver:
     targets: library.UniqueSchedule
 
     def __init__(self):
-        self._log = logger.Logger('Resolver')
+        self._log = logger.Logger('R')
         self._insert_target_lock = threading.Lock()
 
         self.indices = library.Schedule()
@@ -181,9 +185,12 @@ class Resolver:
         except (queue.Empty, ResolverError):
             return 0, ''
 
+        self._log.debug(codes.Code(10901, str(target)), threading.current_thread().name)
+
         try:
             ok, result = script_manager.execute_parser(target.script, 'execute', (target,))
         except scripts.ScriptManagerError:
+            self._log.warn(codes.Code(30902, str(target)), threading.current_thread().name)
             return 1, target.script
 
         if ok:
@@ -193,13 +200,20 @@ class Resolver:
             elif isinstance(result, api.SSuccess):
                 success_hashes[time.time() + storage.pipe.success_hashes_time] = target.hash()
                 script_manager.event_handler.success_status(result)
+                self._log.info(codes.Code(20901, str(result)), threading.current_thread().name)
                 return 4, target.script
             elif isinstance(result, api.SFail):
                 script_manager.event_handler.fail_status(result)
+                self._log.warn(codes.Code(30903, target), threading.current_thread().name)
                 return 5, target.script
             else:
+                self._log.warn(codes.Code(30904, target), threading.current_thread().name)
                 return 6, target.script
         else:
+            if storage.main.production:
+                self._log.error(codes.Code(40903, target), threading.current_thread().name)
+            else:
+                self._log.fatal(WorkerError(codes.Code(40903, target)), parent=threading.current_thread().name)
             return 2, target.script
 
     def insert_index(self, index: api.IndexType, force: bool = False) -> None:  # TODO: Make `now` argument here
@@ -221,17 +235,27 @@ class Resolver:
         except queue.Empty:
             return 0, ''
 
-        ok, targets = script_manager.execute_parser(index.script, 'targets', ())
+        self._log.debug(codes.Code(10902, index), threading.current_thread().name)
+
+        try:
+            ok, targets = script_manager.execute_parser(index.script, 'targets', ())
+        except scripts.ScriptManagerError:
+            self._log.warn(codes.Code(30905, index), threading.current_thread().name)
+            return 1, index.script
+
         if ok:
             if isinstance(targets, (tuple, list)):
                 for i in targets:
                     self.insert_target(i)
                 self.insert_index(index)
-                return 2, index.script
-            else:
+                self._log.debug(codes.Code(20902, index), threading.current_thread().name)
                 return 3, index.script
+            else:
+                self._log.warn(codes.Code(30906, index), threading.current_thread().name)
+                return 4, index.script
         else:
-            return 1, index.script
+            self._log.error(codes.Code(40904, index), threading.current_thread().name)
+            return 2, index.script
 
 
 index_queue: queue.PriorityQueue = queue.PriorityQueue(storage.queues.index_queue_size)
@@ -252,7 +276,7 @@ class Pipe(ThreadClass):
     parsers_hash: str
 
     def __init__(self):
-        super().__init__('Pipe', PipeError)
+        super().__init__('P', PipeError)
         self.parsers_hash = ''
 
     def run(self) -> None:
@@ -280,8 +304,8 @@ class Pipe(ThreadClass):
                                 library.PrioritizedItem(resolver.index_priority(i[1]), i[1]),
                                 timeout=storage.queues.index_queue_size
                             )
-                        except queue.Full:
-                            self.log.warn(codes.Code(30302, i))
+                        except queue.Full:  # TODO: Fix (index can't be lost)
+                            self.log.warn(codes.Code(30303, i))
 
                     for i in resolver.get_targets():  # Send targets
                         try:
@@ -311,45 +335,27 @@ class Pipe(ThreadClass):
 
 
 class Worker(ThreadClass):
-    _name: str = 'Worker'
-
     id: int
-    additional: bool
+    start_time: float
     speed: float
     idle: int
-    start_time: float
+    last_tick: float
 
-    def __init__(self, id_: int, name: str = ''):
-        super().__init__(f'{name if name else self._name}-{id_}', WorkerError)
+    def __init__(self, id_: int):
+        super().__init__(f'W-{id_}', WorkerError)
         self.id = id_
         self.speed = .0
         self.idle = 0
         self.start_time = time.time()
-
-    def log_target_exec(self, status: int, script: str) -> None:
-        if status == 1:
-            self.log.error(f'Target lost in pipeline while executing (script "{script}" not found)')
-        elif status == 2:
-            if storage.main.production:
-                self.log.error(f'Target execution failed ({script})')
-            else:
-                self.log.fatal(WorkerError(f'Target execution failed ({script})'))
-        elif status == 3:
-            self.log.debug(f'Target executed ({script})')
-        elif status == 4:
-            self.log.info(f'Successful target execution ({script})')
-        elif status == 5:
-            self.log.warn(f'Failed target execution ({script})')
-        elif status == 6:
-            self.log.warn(f'Unknown status received while executing target ({script})')
+        self.last_tick = 0
 
     def run(self) -> None:
         self.state = 1
         while True:
-            start: float = time.time()
+            start = self.last_tick = time.time()
             if self.state == 1:
                 try:
-                    self.log_target_exec(*resolver.execute_target())
+                    resolver.execute_target()
                 except Exception as e:
                     self.throw(codes.Code(50401, f'While working: {e.__class__.__name__}: {e.__str__()}'))
                     break
@@ -369,38 +375,31 @@ class Worker(ThreadClass):
             time.sleep(storage.worker.tick - delta if storage.worker.tick - delta >= 0 else 0)
 
 
-class IndexWorker(Worker):
-    _name: str = 'IndexWorker'
+class IndexWorker(ThreadClass):
+    id: int
+    start_time: float
+    speed: float
+    idle: int
+    last_tick: float
 
-    def __init__(self, id_: int, name: str = ''):
-        super().__init__(id_, name if name else self._name)
+    def __init__(self, id_: int):
+        super().__init__(f'IW-{id_}', IndexWorkerError)
+        self.id = id_
+        self.speed = .0
+        self.idle = 0
+        self.start_time = time.time()
+        self.last_tick = 0
 
     def run(self):
         self.state = 1
         while True:
-            start: float = time.time()
+            start = self.last_tick = time.time()
             if self.state == 1:
                 try:
-                    status, script = resolver.execute_index()
-
-                    if status == 1:
-                        if storage.main.production:
-                            self.log.error(f'Catalog execution failed ({script})')
-                        else:
-                            self.log.fatal(WorkerError(f'Catalog execution failed ({script})'))
-                    elif status == 2:
-                        self.log.info(f'Catalog updated ({script})')
-                    elif status == 3:
-                        if storage.main.production:
-                            self.log.error(f'Catalog execution failed ({script})')
-                        else:
-                            self.log.fatal(CollectorError(f'Catalog execution failed ({script})'))
-
-                    if status < 2:
-                        status, script = resolver.execute_target()
-                        self.log_target_exec(status, script)
+                    if resolver.execute_index()[0] < 2:
+                        resolver.execute_target()
                 except Exception as e:
-                    self.throw(codes.Code(50401, f'While working: {e.__class__.__name__}: {e.__str__()}'))
+                    self.throw(codes.Code(51001, f'While working: {e.__class__.__name__}: {e.__str__()}'))
                     break
             elif self.state == 2:  # Pausing state
                 self.log.info(codes.Code(20002))
@@ -422,11 +421,11 @@ class ThreadManager(ThreadClass):
     workers_increment_id: int
     index_workers_increment_id: int
     workers: Dict[int, Worker]
-    index_workers: Dict[int, Worker]
+    index_workers: Dict[int, IndexWorker]
     pipe: Pipe
 
     def __init__(self) -> None:
-        super().__init__('ThreadManager', ThreadManagerError)
+        super().__init__('TM', ThreadManagerError)
         self.workers_increment_id = 0
         self.index_workers_increment_id = 0
         self.workers = {}
@@ -448,7 +447,7 @@ class ThreadManager(ThreadClass):
     def check_workers(self) -> None:
         if len(self.workers) < storage.worker.count:
             self.workers[self.workers_increment_id] = Worker(self.workers_increment_id)
-            self.log.info(codes.Code(20203, f'Worker-{self.workers_increment_id}'))
+            self.log.info(codes.Code(20203, f'W-{self.workers_increment_id}'))
             self.workers_increment_id += 1
         for v in tuple(self.workers.values()):
             if not v.is_alive():
@@ -462,7 +461,7 @@ class ThreadManager(ThreadClass):
     def check_index_workers(self) -> None:
         if len(self.index_workers) < storage.index_worker.count:
             self.index_workers[self.index_workers_increment_id] = IndexWorker(self.index_workers_increment_id)
-            self.log.info(codes.Code(20205, f'IndexWorker-{self.index_workers_increment_id}'))
+            self.log.info(codes.Code(20205, f'IW-{self.index_workers_increment_id}'))
             self.index_workers_increment_id += 1
         for v in tuple(self.index_workers.values()):
             if not v.is_alive():
@@ -535,7 +534,7 @@ class Main:
             config_file = config_file_
         refresh()
         self.state = 0
-        self.log = logger.Logger('Core')
+        self.log = logger.Logger('C')
         self.thread_manager = ThreadManager()
 
     def turn_on(self) -> bool:

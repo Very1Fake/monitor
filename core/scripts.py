@@ -34,7 +34,7 @@ class ScriptIndex:
     def __init__(self):
         if not os.path.isdir(self.path):
             os.makedirs(self.path)
-        self.log: Logger = Logger('ScriptIndex')
+        self.log: Logger = Logger('SI')
         self.config = self.load_config()
         self.log.info(codes.Code(20601))
         self.index: list = []
@@ -276,7 +276,7 @@ class EventHandler:  # TODO: unload protection
 
 class ScriptManager:
     def __init__(self):
-        self.log = Logger('ScriptManager')
+        self.log = Logger('SM')
         self.index: ScriptIndex = ScriptIndex()
         self.scripts: dict = {}
         self.parsers: dict = {}
