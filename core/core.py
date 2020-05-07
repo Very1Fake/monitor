@@ -520,7 +520,8 @@ class ThreadManager(ThreadClass):
 
     def close(self) -> float:
         self.state = 5
-        return storage.pipe.wait + len(self.workers) * (storage.worker.wait + 1) + len(self.index_workers) * (storage.index_worker.wait + 1)
+        return storage.pipe.wait + len(self.workers) * (
+                storage.worker.wait + 1) + len(self.index_workers) * (storage.index_worker.wait + 1)
 
 
 class Main:
