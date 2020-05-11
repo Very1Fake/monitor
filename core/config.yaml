@@ -18,10 +18,6 @@ api:
     - 0
   priority_interval_default: 100
   priority_target_default: 1001
-pipe:
-  success_hashes_time: 604800
-  tick: 0.5
-  wait: 10
 index_worker:
   count: 5
   tick: 1
@@ -35,12 +31,17 @@ main:
   cache_path: .cache
   logs_path: logs
   production: false
+pipe:
+  success_hashes_time: 604800
+  tick: 0.5
+  wait: 10
 queues:
   index_queue_put_wait: 8
   index_queue_size: 256
   target_queue_put_wait: 8
   target_queue_size: 1024
 thread_manager:
+  lock_ticks: 16
   tick: 1
 worker:
   count: 5

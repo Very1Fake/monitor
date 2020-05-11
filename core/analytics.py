@@ -5,7 +5,7 @@ import threading
 import time
 from datetime import datetime
 
-from core import storage, core
+from core import storage, core, __version__
 
 
 class Analytics:
@@ -28,6 +28,68 @@ class Analytics:
                 last: float = time.time()
             time.sleep(1)
 
+    @staticmethod
+    def info_workers() -> dict:
+        with core.monitor.thread_manager.lock:
+            return {
+                'count': core.monitor.thread_manager.workers.__len__(),
+                'speed': round(
+                    sum([i.speed for i in core.monitor.thread_manager.workers.values()]),
+                    3
+                ),
+                'list': [
+                    {
+                        'name': i.name,
+                        'speed': i.speed,
+                        'start_time': datetime.utcfromtimestamp(i.start_time).strftime(
+                            storage.analytics.datetime_format
+                        ) if storage.analytics.datetime else str(i.start_time),
+                        'uptime': (datetime.utcnow() - datetime.utcfromtimestamp(i.start_time)).total_seconds() if
+                        storage.analytics.datetime else str(time.time() - i.start_time)
+                    } for i in core.monitor.thread_manager.workers.values()
+                ]
+            }
+
+    @staticmethod
+    def info_worker(id_: int) -> dict:
+        if isinstance(id_, int):
+            with core.monitor.thread_manager.lock:
+                if id_ in core.monitor.thread_manager.workers:
+                    worker = core.monitor.thread_manager.workers[id_]
+                    return {
+                        'id': worker.id,
+                        'name': worker.name,
+                        'start_time': worker.start_time,
+                        'state': worker.state,
+                        'speed': worker.speed,
+                        'last_tick': worker.last_tick,
+                        'freeze_time': time.time() - worker.last_tick
+                    }
+                else:
+                    return {}
+        else:
+            raise TypeError('id_ must be int')
+
+    @staticmethod
+    def info_index_worker(id_: int) -> dict:
+        if isinstance(id_, int):
+            with core.monitor.thread_manager.lock:
+                if id_ in core.monitor.thread_manager.index_workers:
+                    worker = core.monitor.thread_manager.index_workers[id_]
+                    return {
+                        'id': worker.id,
+                        'name': worker.name,
+                        'start_time': worker.start_time,
+                        'state': worker.state,
+                        'speed': worker.speed,
+                        'last_tick': worker.last_tick,
+                        'freeze_time': time.time() - worker.last_tick
+                    }
+                else:
+                    return {}
+        else:
+            raise TypeError('id_ must be int')
+
     def snapshot(self, type_: int = 1) -> dict:
         end_time = datetime.utcnow()
         return {
@@ -46,27 +108,10 @@ class Analytics:
                 'parsers': core.script_manager.parsers.__len__(),
                 'event_executors': core.script_manager.event_handler.executors.__len__()
             },
-            'workers': {
-                'count': sys.modules['__main__'].monitor.thread_manager.workers.__len__(),
-                'speed': round(
-                    sum([i.speed for i in sys.modules['__main__'].monitor.thread_manager.workers.values()]),
-                    3
-                ),
-                'list': [
-                    {
-                        'name': i.name,
-                        'speed': i.speed,
-                        'start_time': datetime.utcfromtimestamp(i.start_time).strftime(
-                            storage.analytics.datetime_format
-                        ) if storage.analytics.datetime else str(i.start_time),
-                        'uptime': (datetime.utcnow() - datetime.utcfromtimestamp(i.start_time)).total_seconds() if
-                        storage.analytics.datetime else str(time.time() - i.start_time)
-                    } for i in sys.modules['__main__'].monitor.thread_manager.workers.values()
-                ]
-            },
+            'workers': self.info_workers(),
             'system': {
-                'version': sys.modules['core'].__version__,
-                'analytics_version': 1
+                'version': __version__,
+                'analytics_version': 2
             }
         }
 
@@ -89,7 +134,3 @@ class Analytics:
         self.active = False
         self.thread.join()
         self.dump(2)
-
-
-if __name__ == 'core.analytics':
-    analytics: Analytics = Analytics()

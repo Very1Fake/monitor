@@ -60,6 +60,7 @@ class Analytics(NamedTuple):
 
 class ThreadManager(NamedTuple):
     tick: float = 1
+    lock_ticks: int = 16  # How much ticks lock can be acquired, then it will released
 
 
 class Pipe(NamedTuple):

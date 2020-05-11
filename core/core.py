@@ -22,8 +22,6 @@ from . import storage
 
 
 config_file = 'core/config.yaml'
-script_manager: scripts.ScriptManager = scripts.ScriptManager()
-success_hashes: library.Schedule = library.Schedule()
 
 
 def refresh() -> None:
@@ -258,20 +256,6 @@ class Resolver:
             return 2, index.script
 
 
-index_queue: queue.PriorityQueue = queue.PriorityQueue(storage.queues.index_queue_size)
-target_queue: queue.PriorityQueue = queue.PriorityQueue(storage.queues.target_queue_size)
-resolver: Resolver = Resolver()
-server = uctp.peer.Peer(
-    'monitor',
-    RSA.import_key(open('./monitor.pem').read()),
-    '0.0.0.0',
-    trusted=uctp.peer.Trusted(*yaml.safe_load(open('authority.yaml'))['trusted']),
-    aliases=uctp.peer.Aliases(yaml.safe_load(open('authority.yaml'))['aliases']),
-    auth_timeout=4,
-    buffer=8192
-)
-
-
 class Pipe(ThreadClass):
     parsers_hash: str
 
@@ -418,18 +402,24 @@ class IndexWorker(ThreadClass):
 
 
 class ThreadManager(ThreadClass):
-    workers_increment_id: int
+    _lock_ticks: int
+
+    lock: threading.Lock
     index_workers_increment_id: int
-    workers: Dict[int, Worker]
     index_workers: Dict[int, IndexWorker]
+    workers_increment_id: int
+    workers: Dict[int, Worker]
     pipe: Pipe
 
     def __init__(self) -> None:
         super().__init__('TM', ThreadManagerError)
-        self.workers_increment_id = 0
+        self._lock_ticks = 0
+
+        self.lock = threading.Lock()
         self.index_workers_increment_id = 0
-        self.workers = {}
         self.index_workers = {}
+        self.workers_increment_id = 0
+        self.workers = {}
         self.pipe = None
 
     def check_pipe(self) -> None:
@@ -493,9 +483,24 @@ class ThreadManager(ThreadClass):
             try:
                 start: float = time.time()
                 if self.state == 1:
-                    self.check_pipe()
-                    self.check_workers()
-                    self.check_index_workers()
+                    if self.lock.acquire(False):
+                        self.check_pipe()
+                        self.check_workers()
+                        self.check_index_workers()
+                        try:
+                            self._lock_ticks = 0
+                            self.lock.release()
+                        except RuntimeError:
+                            pass
+                    else:
+                        if self._lock_ticks == storage.thread_manager.lock_ticks:
+                            self.log.warn(codes.Code(30204))
+                            try:
+                                self.lock.release()
+                            except RuntimeError:
+                                pass
+                        else:
+                            self._lock_ticks += 1
                 elif self.state == 2:  # Pausing state
                     self.log.info(codes.Code(20002))
                     self.state = 3
@@ -524,7 +529,7 @@ class ThreadManager(ThreadClass):
                 storage.worker.wait + 1) + len(self.index_workers) * (storage.index_worker.wait + 1)
 
 
-class Main:
+class Core:
     state: int
     log: logger.Logger
     thread_manager: ThreadManager
@@ -555,9 +560,9 @@ class Main:
 
     def start(self):
         self.state = 1
-        commands.Commands(server, self)
+        commands.Commands()
 
-        analytics.analytics.dump(0)
+        analytic.dump(0)
         self.turn_on()
         server.run()
 
@@ -585,7 +590,28 @@ class Main:
             cache.dump_success_hashes(success_hashes)
             self.log.info(codes.Code(20105))
             script_manager.event_handler.monitor_turned_off()
-            analytics.analytics.stop()
+            analytic.stop()
             script_manager.unload_all()
             script_manager.del_()
             self.log.info(codes.Code(20106))
+
+
+if __name__ == 'core.core':
+    script_manager: scripts.ScriptManager = scripts.ScriptManager()
+    success_hashes: library.Schedule = library.Schedule()
+
+    analytic: analytics.Analytics = analytics.Analytics()
+    index_queue: queue.PriorityQueue = queue.PriorityQueue(storage.queues.index_queue_size)
+    target_queue: queue.PriorityQueue = queue.PriorityQueue(storage.queues.target_queue_size)
+    resolver: Resolver = Resolver()
+    server = uctp.peer.Peer(
+        'monitor',
+        RSA.import_key(open('./monitor.pem').read()),
+        '0.0.0.0',
+        trusted=uctp.peer.Trusted(*yaml.safe_load(open('authority.yaml'))['trusted']),
+        aliases=uctp.peer.Aliases(yaml.safe_load(open('authority.yaml'))['aliases']),
+        auth_timeout=4,
+        buffer=8192
+    )
+
+    monitor: Core = Core()

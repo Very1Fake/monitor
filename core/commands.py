@@ -1,23 +1,32 @@
 import uctp
 
+from core import core
 from . import logger
 
 
 class Commands:
     logger: logger.Logger
 
-    def __init__(
-            self,
-            server: uctp.peer.Peer,
-            core
-    ):
+    def __init__(self):
         self.log = logger.Logger('Commands')
         self.core = core
-        server.commands.add_(self.stop)
+        core.server.commands.add_(self.analytics_dump)
+        core.server.commands.add_(self.analytics_snapshot)
+        core.server.commands.add_(self.stop)
 
-    def stop(self) -> bool:
-        if self.core.state == 1:
-            self.core.state = 2
+    @staticmethod
+    def analytics_dump() -> bool:
+        core.analytic.dump()
+        return True
+
+    @staticmethod
+    def analytics_snapshot() -> dict:
+        return core.analytic.snapshot(1)
+
+    @staticmethod
+    def stop() -> bool:
+        if core.monitor.state == 1:
+            core.monitor.state = 2
             return True
         else:
             return False

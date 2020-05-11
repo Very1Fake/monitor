@@ -78,6 +78,7 @@ _codes: Dict[int, str] = {
     30201: 'Pipe was unexpectedly stopped',
     30202: 'Worker was unexpectedly stopped',
     30203: 'IndexWorker was unexpectedly stopped',
+    30204: 'Lock forced released',
 
     # Pipe (303xx)
     30301: 'Target lost while inserting in schedule',
@@ -155,7 +156,6 @@ _codes: Dict[int, str] = {
 
     # IndexWorker (510xx)
     51001: 'Unexpectedly has turned off'
-
 }
 
 
