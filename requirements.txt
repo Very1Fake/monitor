@@ -1,4 +1,4 @@
-uctp==1.0.0a2
+uctp==1.0.0a3
 checksumdir==1.1.7
 packaging==20.3
 termcolor==1.1.0

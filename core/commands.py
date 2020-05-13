@@ -12,6 +12,8 @@ class Commands:
         self.core = core
         core.server.commands.add_(self.analytics_dump)
         core.server.commands.add_(self.analytics_snapshot)
+        core.server.commands.add_(self.analytics_worker)
+        core.server.commands.add_(self.analytics_index_worker)
         core.server.commands.add_(self.stop)
 
     @staticmethod
@@ -20,8 +22,16 @@ class Commands:
         return True
 
     @staticmethod
-    def analytics_snapshot() -> dict:
-        return core.analytic.snapshot(1)
+    def analytics_snapshot(type_: int = 1) -> dict:
+        return core.analytic.snapshot(type_)
+
+    @staticmethod
+    def analytics_worker(id_: int) -> dict:
+        return core.analytic.info_worker(id_)
+
+    @staticmethod
+    def analytics_index_worker(id_: int) -> dict:
+        return core.analytic.info_index_worker(id_)
 
     @staticmethod
     def stop() -> bool:

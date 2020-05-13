@@ -322,14 +322,14 @@ class Worker(ThreadClass):
     id: int
     start_time: float
     speed: float
-    idle: int
+    idle: bool
     last_tick: float
 
     def __init__(self, id_: int):
         super().__init__(f'W-{id_}', WorkerError)
         self.id = id_
         self.speed = .0
-        self.idle = 0
+        self.idle = True
         self.start_time = time.time()
         self.last_tick = 0
 
@@ -339,7 +339,10 @@ class Worker(ThreadClass):
             start = self.last_tick = time.time()
             if self.state == 1:
                 try:
-                    resolver.execute_target()
+                    if resolver.execute_target()[0] > 1:
+                        self.idle = False
+                    else:
+                        self.idle = True
                 except Exception as e:
                     self.throw(codes.Code(50401, f'While working: {e.__class__.__name__}: {e.__str__()}'))
                     break
@@ -363,14 +366,14 @@ class IndexWorker(ThreadClass):
     id: int
     start_time: float
     speed: float
-    idle: int
+    idle: bool
     last_tick: float
 
     def __init__(self, id_: int):
         super().__init__(f'IW-{id_}', IndexWorkerError)
         self.id = id_
         self.speed = .0
-        self.idle = 0
+        self.idle = True
         self.start_time = time.time()
         self.last_tick = 0
 
@@ -380,8 +383,13 @@ class IndexWorker(ThreadClass):
             start = self.last_tick = time.time()
             if self.state == 1:
                 try:
-                    if resolver.execute_index()[0] < 2:
-                        resolver.execute_target()
+                    if resolver.execute_index()[0] < 1:
+                        if resolver.execute_target()[0] > 1:
+                            self.idle = False
+                        else:
+                            self.idle = True
+                    else:
+                        self.idle = False
                 except Exception as e:
                     self.throw(codes.Code(51001, f'While working: {e.__class__.__name__}: {e.__str__()}'))
                     break
