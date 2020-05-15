@@ -79,9 +79,9 @@ _codes: Dict[int, str] = {
     30000: 'Test warning',
 
     # ThreadManager (302xx)
-    30201: 'Pipe was unexpectedly stopped',
-    30202: 'Worker was unexpectedly stopped',
-    30203: 'IndexWorker was unexpectedly stopped',
+    30201: 'Pipe was stopped',
+    30202: 'Worker was stopped',
+    30203: 'IndexWorker was stopped',
     30204: 'Lock forced released',
 
     # Pipe (303xx)
@@ -115,6 +115,11 @@ _codes: Dict[int, str] = {
     # Error (4xxxx)
     # System (400xx)
     40000: 'Test error',
+
+    # ThreadManager (402xx)
+    40201: 'Pipe was unexpectedly stopped',
+    40202: 'Worker was unexpectedly stopped',
+    40203: 'IndexWorker was unexpectedly stopped',
 
     # Pipe (403xx)
     40301: 'Unknown index',

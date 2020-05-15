@@ -1,4 +1,5 @@
 import queue
+import random
 import threading
 import time
 import traceback
@@ -86,7 +87,7 @@ class ThreadClass(threading.Thread):
         return self._state
 
     @state.setter
-    def state(self, value: int) -> None:
+    def state(self, value: int) -> None:  # TODO: Set 5 from any state
         if isinstance(value, int):
             if self._state == 1 and value not in (2, 5):
                 raise StateError('In this state, you can change state only to 2 or 5')
@@ -327,12 +328,12 @@ class Pipe(ThreadClass):
                     break
             elif self.state == 2:  # Pausing state
                 self.log.info(codes.Code(20002))
-                self.state = 3
+                self._state = 3
             elif self.state == 3:  # Paused state
                 pass
             elif self.state == 4:  # Resuming state
                 self.log.info(codes.Code(20003))
-                self.state = 1
+                self._state = 1
             elif self.state == 5:  # Stopping state
                 self.log.info(codes.Code(20005))
                 break
@@ -370,12 +371,12 @@ class Worker(ThreadClass):
                     break
             elif self.state == 2:  # Pausing state
                 self.log.info(codes.Code(20002))
-                self.state = 3
+                self._state = 3
             elif self.state == 3:  # Paused state
                 pass
             elif self.state == 4:  # Resuming state
                 self.log.info(codes.Code(20003))
-                self.state = 1
+                self._state = 1
             elif self.state == 5:  # Stopping state
                 self.log.info(codes.Code(20005))
                 break
@@ -400,7 +401,7 @@ class IndexWorker(ThreadClass):
         self.last_tick = 0
 
     def run(self):
-        self.state = 1
+        self._state = 1
         while True:
             start = self.last_tick = time.time()
             if self.state == 1:
@@ -417,12 +418,12 @@ class IndexWorker(ThreadClass):
                     break
             elif self.state == 2:  # Pausing state
                 self.log.info(codes.Code(20002))
-                self.state = 3
+                self._state = 3
             elif self.state == 3:  # Paused state
                 pass
             elif self.state == 4:  # Resuming state
                 self.log.info(codes.Code(20003))
-                self.state = 1
+                self._state = 1
             elif self.state == 5:  # Stopping state
                 self.log.info(codes.Code(20005))
                 break
@@ -434,7 +435,7 @@ class IndexWorker(ThreadClass):
 class ThreadManager(ThreadClass):
     _lock_ticks: int
 
-    lock: threading.Lock
+    lock: threading.RLock
     index_workers_increment_id: int
     index_workers: Dict[int, IndexWorker]
     workers_increment_id: int
@@ -445,7 +446,7 @@ class ThreadManager(ThreadClass):
         super().__init__('TM', ThreadManagerError)
         self._lock_ticks = 0
 
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.index_workers_increment_id = 0
         self.index_workers = {}
         self.workers_increment_id = 0
@@ -453,59 +454,105 @@ class ThreadManager(ThreadClass):
         self.pipe = None
 
     def check_pipe(self) -> None:
-        if not self.pipe:
-            self.pipe = Pipe()
-            self.log.info(codes.Code(20201))
-        if not self.pipe.is_alive():
-            try:
-                self.pipe.start()
-                self.log.info(codes.Code(20202))
-            except RuntimeError:
-                self.log.warn(codes.Code(30201))
-                self.pipe = None
+        with self.lock:
+            if not self.pipe:
+                self.pipe = Pipe()
+                self.log.info(codes.Code(20201))
+            if not self.pipe.is_alive():
+                try:
+                    self.pipe.start()
+                    self.log.info(codes.Code(20202))
+                except RuntimeError:
+                    if self.pipe.state == 5:
+                        self.log.warn(codes.Code(30201))
+                    else:
+                        self.log.error(codes.Code(40201))
+                    self.pipe = None
 
     def check_workers(self) -> None:
-        if len(self.workers) < storage.worker.count:
-            self.workers[self.workers_increment_id] = Worker(self.workers_increment_id)
-            self.log.info(codes.Code(20203, f'W-{self.workers_increment_id}'))
-            self.workers_increment_id += 1
-        for v in tuple(self.workers.values()):
-            if not v.is_alive():
-                try:
-                    v.start()
-                    self.log.info(codes.Code(20204, f'{v.name}'))
-                except RuntimeError:
-                    self.log.warn(codes.Code(30202, f'{v.name}'))
-                    del self.workers[v.id]
+        with self.lock:
+            if len(self.workers) < storage.worker.count:
+                self.workers[self.workers_increment_id] = Worker(self.workers_increment_id)
+                self.log.info(codes.Code(20203, f'W-{self.workers_increment_id}'))
+                self.workers_increment_id += 1
+            for v in list(self.workers.values()):
+                if not v.is_alive():
+                    try:
+                        v.start()
+                        self.log.info(codes.Code(20204, str(v.id)))
+                    except RuntimeError:
+                        if v.state == 5:
+                            self.log.warn(codes.Code(30202, str(v.id)))
+                        else:
+                            self.log.error(codes.Code(40202, str(v.id)))
+                        del self.workers[v.id]
 
     def check_index_workers(self) -> None:
-        if len(self.index_workers) < storage.index_worker.count:
-            self.index_workers[self.index_workers_increment_id] = IndexWorker(self.index_workers_increment_id)
-            self.log.info(codes.Code(20205, f'IW-{self.index_workers_increment_id}'))
-            self.index_workers_increment_id += 1
-        for v in tuple(self.index_workers.values()):
-            if not v.is_alive():
-                try:
-                    v.start()
-                    self.log.info(codes.Code(20206, f'{v.name}'))
-                except RuntimeError:
-                    self.log.warn(codes.Code(30203, f'{v.name}'))
-                    del self.index_workers[v.id]
+        with self.lock:
+            if len(self.index_workers) < storage.index_worker.count:
+                self.index_workers[self.index_workers_increment_id] = IndexWorker(self.index_workers_increment_id)
+                self.log.info(codes.Code(20205, f'IW-{self.index_workers_increment_id}'))
+                self.index_workers_increment_id += 1
+            for v in list(self.index_workers.values()):
+                if not v.is_alive():
+                    try:
+                        v.start()
+                        self.log.info(codes.Code(20206, str(v.id)))
+                    except RuntimeError:
+                        if v.state == 5:
+                            self.log.warn(codes.Code(30203, str(v.id)))
+                        else:
+                            self.log.error(codes.Code(40203, str(v.id)))
+                        del self.index_workers[v.id]
+
+    def stop_worker(self, id_: int = -1, blocking: bool = False) -> int:
+        with self.lock:
+            if id_ < 0:
+                id_ = random.choice(list(self.workers))
+            self.workers[id_].state = 5
+
+            if blocking:
+                self.workers[id_].join(storage.worker.wait)
+
+            return id_
+
+    def stop_index_worker(self, id_: int = -1, blocking: bool = False) -> int:
+        with self.lock:
+            if id_ < 0:
+                id_ = random.choice(list(self.index_workers))
+            self.index_workers[id_].state = 5
+
+            if blocking:
+                self.index_workers[id_].join(storage.index_worker.wait)
+
+            return id_
 
     def stop_threads(self) -> None:
-        for i in self.workers.values():
-            i.state = 5
-        for i in tuple(self.workers):
-            self.workers[i].join(storage.worker.wait)
-            del self.workers[i]
-        for i in self.index_workers.values():
-            i.state = 5
-        for i in tuple(self.index_workers):
-            self.index_workers[i].join(storage.index_worker.wait)
-            del self.index_workers[i]
-        self.pipe.state = 5
-        self.pipe.join(storage.pipe.wait)
-        self.pipe = None
+        with self.lock:
+            for i in self.workers.values():
+                try:
+                    i.state = 5
+                except StateError:
+                    continue
+            for i in tuple(self.workers):
+                self.workers[i].join(storage.worker.wait)
+                del self.workers[i]
+
+            for i in self.index_workers.values():
+                try:
+                    i.state = 5
+                except StateError:
+                    continue
+            for i in tuple(self.index_workers):
+                self.index_workers[i].join(storage.index_worker.wait)
+                del self.index_workers[i]
+
+            try:
+                self.pipe.state = 5
+            except StateError:
+                pass
+            self.pipe.join(storage.pipe.wait)
+            self.pipe = None
 
     def run(self) -> None:
         self.state = 1

@@ -1,6 +1,5 @@
 import json
 import os
-import sys
 import threading
 import time
 from datetime import datetime
@@ -60,6 +59,7 @@ class Analytics:
                         'id': worker.id,
                         'name': worker.name,
                         'start_time': worker.start_time,
+                        'uptime': round(time.time() - worker.start_time, 3),
                         'state': worker.state,
                         'speed': worker.speed,
                         'last_tick': worker.last_tick,
@@ -80,6 +80,7 @@ class Analytics:
                         'id': worker.id,
                         'name': worker.name,
                         'start_time': worker.start_time,
+                        'uptime': round(time.time() - worker.start_time, 3),
                         'state': worker.state,
                         'speed': worker.speed,
                         'last_tick': worker.last_tick,

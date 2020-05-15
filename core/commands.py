@@ -22,16 +22,36 @@ class Commands:
         core.server.commands.add_(self.scripts_unload_all)
         core.server.commands.add_(self.scripts_reload_all)
         core.server.commands.add_(self.scripts_reindex)
+        core.server.commands.add_(self.pipe_pause)
+        core.server.commands.add_(self.pipe_resume)
+        core.server.commands.add_(self.worker_stop)
+        core.server.commands.add_(self.worker_list)
+        core.server.commands.add_(self.worker_pause)
+        core.server.commands.add_(self.worker_resume)
+        core.server.commands.add_(self.index_worker_stop)
+        core.server.commands.add_(self.index_worker_list)
+        core.server.commands.add_(self.index_worker_pause)
+        core.server.commands.add_(self.index_worker_resume)
         core.server.commands.add_(self.stop)
 
-        core.server.commands.alias('a_dump', 'analytics_dump')
-        core.server.commands.alias('a_snapshot', 'analytics_snapshot')
-        core.server.commands.alias('a_worker', 'analytics_worker')
-        core.server.commands.alias('a_i_worker', 'analytics_index_worker')
-        core.server.commands.alias('s_load', 'script_load')
-        core.server.commands.alias('s_unload', 'script_unload')
-        core.server.commands.alias('s_reload', 'script_reload')
-        core.server.commands.alias('s_reindex', 'scripts_reindex')
+        core.server.commands.alias('a-dump', 'analytics_dump')
+        core.server.commands.alias('a-snapshot', 'analytics_snapshot')
+        core.server.commands.alias('a-worker', 'analytics_worker')
+        core.server.commands.alias('a-i-worker', 'analytics_index_worker')
+        core.server.commands.alias('s-load', 'script_load')
+        core.server.commands.alias('s-unload', 'script_unload')
+        core.server.commands.alias('s-reload', 'script_reload')
+        core.server.commands.alias('s-reindex', 'scripts_reindex')
+        core.server.commands.alias('p-pause', 'pipe_pause')
+        core.server.commands.alias('p-resume', 'pipe_resume')
+        core.server.commands.alias('w-stop', 'worker_stop')
+        core.server.commands.alias('w-list', 'worker_list')
+        core.server.commands.alias('w-pause', 'worker_pause')
+        core.server.commands.alias('w-resume', 'worker_resume')
+        core.server.commands.alias('iw-stop', 'index_worker_stop')
+        core.server.commands.alias('iw-list', 'index_worker_list')
+        core.server.commands.alias('iw-pause', 'index_worker_pause')
+        core.server.commands.alias('iw-resume', 'index_worker_resume')
 
     @staticmethod
     def analytics_dump() -> bool:
@@ -84,6 +104,58 @@ class Commands:
     @staticmethod
     def scripts_reindex() -> int:
         return core.script_manager.index.reindex()
+
+    @staticmethod
+    def pipe_pause() -> bool:
+        with core.monitor.thread_manager.lock:
+            core.monitor.thread_manager.pipe.state = 2
+            return True
+
+    @staticmethod
+    def pipe_resume() -> bool:
+        with core.monitor.thread_manager.lock:
+            core.monitor.thread_manager.pipe.state = 4
+            return True
+
+    @staticmethod
+    def worker_stop(id_: int = -1) -> int:
+        return core.monitor.thread_manager.stop_worker(id_)
+
+    @staticmethod
+    def worker_list() -> list:
+        return list(core.monitor.thread_manager.workers)
+
+    @staticmethod
+    def worker_pause(id_: int) -> bool:
+        with core.monitor.thread_manager.lock:
+            core.monitor.thread_manager.workers[id_].state = 2
+            return True
+
+    @staticmethod
+    def worker_resume(id_: int) -> bool:
+        with core.monitor.thread_manager.lock:
+            core.monitor.thread_manager.workers[id_].state = 4
+            return True
+
+    @staticmethod
+    def index_worker_stop(id_: int = -1) -> int:
+        return core.monitor.thread_manager.stop_index_worker(id_)
+
+    @staticmethod
+    def index_worker_list() -> list:
+        return list(core.monitor.thread_manager.workers)
+
+    @staticmethod
+    def index_worker_pause(id_: int) -> bool:
+        with core.monitor.thread_manager.lock:
+            core.monitor.thread_manager.index_workers[id_].state = 2
+            return True
+
+    @staticmethod
+    def index_worker_resume(id_: int) -> bool:
+        with core.monitor.thread_manager.lock:
+            core.monitor.thread_manager.index_workers[id_].state = 4
+            return True
 
     @staticmethod
     def stop() -> bool:
