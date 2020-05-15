@@ -107,16 +107,18 @@ class ThreadClass(threading.Thread):
 
 class Resolver:
     _log: logger.Logger
+    _insert_indices_lock: threading.Lock
     _insert_target_lock: threading.Lock
 
-    indices: library.Schedule
+    indices: library.UniqueSchedule
     targets: library.UniqueSchedule
 
     def __init__(self):
         self._log = logger.Logger('R')
+        self._insert_indices_lock = threading.Lock()
         self._insert_target_lock = threading.Lock()
 
-        self.indices = library.Schedule()
+        self.indices = library.UniqueSchedule()
         self.targets = library.UniqueSchedule()
 
     @staticmethod
@@ -171,7 +173,7 @@ class Resolver:
                     else:
                         self._log.error(codes.Code(40902, target))
                 except ValueError:
-                    self._log.fatal_msg(codes.Code(30301, target))
+                    self._log.warn(codes.Code(30907, target))
                 except IndexError:
                     self._log.test(f'Inserting non-unique target')
 
@@ -215,17 +217,21 @@ class Resolver:
             return 2, target.script
 
     def insert_index(self, index: api.IndexType, force: bool = False) -> None:  # TODO: Make `now` argument here
-        if isinstance(index, (api.IOnce, api.IInterval)):
-            if force:
-                self.indices[time.time()] = index
-            else:
-                if isinstance(index, api.IInterval):
-                    self.indices[time.time() + index.interval] = index
-        else:
-            if storage.main.production:
-                self._log.error(codes.Code(40901, index))
-            else:
-                self._log.fatal(CollectorError(codes.Code(40901, index)))
+        with self._insert_indices_lock:
+            try:
+                if isinstance(index, (api.IOnce, api.IInterval)):
+                    if force:
+                        self.indices[time.time()] = index
+                    else:
+                        if isinstance(index, api.IInterval):
+                            self.indices[time.time() + index.interval] = index
+                else:
+                    if storage.main.production:
+                        self._log.error(codes.Code(40901, index))
+                    else:
+                        self._log.fatal(CollectorError(codes.Code(40901, index)))
+            except IndexError:
+                self._log.test(f'Inserting non-unique index')
 
     def execute_index(self) -> Tuple[int, str]:  # TODO: Combine in one function for new API
         try:
@@ -257,11 +263,22 @@ class Resolver:
 
 
 class Pipe(ThreadClass):
-    parsers_hash: str
+    parsers_hashes: Dict[str, str]
 
     def __init__(self):
         super().__init__('P', PipeError)
-        self.parsers_hash = ''
+        self.parsers_hashes = {}
+
+    @staticmethod
+    def _compare_parsers(old: Dict[str, str], new: Dict[str, str]):
+        different = []
+        for i in new:
+            if i in old:
+                if new[i] != old[i]:
+                    different.append(i)
+            else:
+                different.append(i)
+        return different
 
     def run(self) -> None:
         self.state = 1
@@ -271,16 +288,21 @@ class Pipe(ThreadClass):
                 try:
                     del success_hashes[:time.time()]  # Cleanup expired hashes
 
-                    if script_manager.hash() != self.parsers_hash:  # Check for scripts (loaded/unloaded)
-                        self.log.info('Parsers reindexing started')
-                        for i in script_manager.parsers:
-                            ok, index = script_manager.execute_parser(i, 'index', ())
-                            if ok:
-                                resolver.insert_index(index, True)
-                            else:
-                                self.log.error(f'Reindexing failed ({i})')
-                        self.parsers_hash = script_manager.hash()
-                        self.log.info('Parsers reindexing complete')
+                    if different := self._compare_parsers(self.parsers_hashes, script_manager.hash()):  # Check for scripts (loaded/unloaded)
+                        with script_manager.lock:
+                            self.log.info(codes.Code(20301))
+                            for i in different:
+                                self.log.debug(codes.Code(10301, i))
+                                ok, index = script_manager.execute_parser(i, 'index', ())
+                                if ok:
+                                    resolver.insert_index(index, True)
+                                    self.log.info(codes.Code(20303, i))
+                                else:
+                                    self.log.warn(codes.Code(30301, i))
+                            self.parsers_hashes = script_manager.hash()
+                            self.log.info(codes.Code(20302))
+                    elif self.parsers_hashes != script_manager.hash():
+                        self.parsers_hashes = script_manager.hash()
 
                     for i in resolver.indices.pop(slice(time.time())):  # Send indices
                         try:

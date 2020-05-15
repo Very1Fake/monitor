@@ -3,8 +3,9 @@ import importlib
 import json
 import os
 import sys
+import threading
 from types import ModuleType
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, List
 
 import yaml
 from checksumdir import dirhash
@@ -14,7 +15,7 @@ from . import api
 from . import codes
 from . import storage
 from . import version
-from .logger import Logger
+from . import logger
 
 
 # TODO: Status codes
@@ -29,15 +30,18 @@ class ScriptManagerError(Exception):
 
 
 class ScriptIndex:
-    path = 'scripts'
+    log: logger.Logger
+    config: dict
+    index: list
+    path: str = 'scripts'
 
     def __init__(self):
         if not os.path.isdir(self.path):
             os.makedirs(self.path)
-        self.log: Logger = Logger('SI')
+        self.log = logger.Logger('SI')
         self.config = self.load_config()
         self.log.info(codes.Code(20601))
-        self.index: list = []
+        self.index = []
 
     def __repr__(self) -> str:
         return f'ScriptIndex({len(self.index)} script(s) indexed, path="{self.path}")'
@@ -100,17 +104,14 @@ class ScriptIndex:
         good = True
         config: dict = yaml.safe_load(open(file))
         if isinstance(config, dict):
-            if 'name' not in config:
-                self.log.debug('"name" not specified in ' + file)
-                good = False
-            else:
+            if 'name' in config:
                 if not isinstance(config['name'], str):
                     self.log.debug('"name" must be str in ' + file)
                     good = False
-            if 'core' not in config:
-                self.log.debug('"core" not specified in ' + file)
-                good = False
             else:
+                self.log.debug('"name" not specified in ' + file)
+                good = False
+            if 'core' in config:
                 if not isinstance(config['core'], str):
                     self.log.debug('"core" must be version(str) in ' + file)
                     good = False
@@ -118,10 +119,10 @@ class ScriptIndex:
                     if not self.check_dependency_version_style(config['core']):
                         self.log.debug('Wrong style of version in "core" in ' + file)
                         good = False
-            if 'version' not in config:
-                self.log.debug('"version" not specified in ' + file)
-                good = False
             else:
+                self.log.debug('"core" not specified in ' + file)
+                good = False
+            if 'version' in config:
                 if not isinstance(config['version'], str):
                     self.log.debug('"version" must be version(str) in ' + file)
                     good = False
@@ -131,13 +132,16 @@ class ScriptIndex:
                     except InvalidVersion:
                         self.log.debug('Wrong version style of "version" in ' + file)
                         good = False
-            if 'important' not in config:
-                self.log.debug('"important" not specified in ' + file)
-                good = False
             else:
+                self.log.debug('"version" not specified in ' + file)
+                good = False
+            if 'important' in config:
                 if not isinstance(config['important'], bool):
                     self.log.debug('"important" must be bool in ' + file)
                     good = False
+            else:
+                self.log.debug('"important" not specified in ' + file)
+                good = False
             if good:
                 return True
         return False
@@ -147,10 +151,10 @@ class ScriptIndex:
         raw: dict = yaml.safe_load(open(file))
         config: dict = {
             'name': raw['name'],
-            'path': os.path.dirname(file),
             'core': raw['core'],
             'version': raw['version'],
-            'important': raw['important']
+            'important': raw['important'],
+            '_path': os.path.abspath(os.path.dirname(file))
         }
         if 'description' in raw:
             config['description'] = raw['description']
@@ -166,14 +170,13 @@ class ScriptIndex:
             config['max-errors'] = raw['max-errors'] if config['can_be_unloaded'] else -1
         else:
             config['max-errors'] = -1
-        config['hash'] = dirhash(os.path.dirname(file), 'sha1')
         return config
 
-    def reindex(self) -> None:
+    def reindex(self) -> int:
         folders: tuple = tuple(
             i for i in next(os.walk(self.path))[1] if i not in self.config['ignore']['folders']
         )  # Get all script folders
-        names: Tuple[str] = ()
+        names: List[str] = []
         self.index.clear()
         for i in folders:
             file = f'{self.path}/{i}/config.yaml'
@@ -193,9 +196,10 @@ class ScriptIndex:
             if config['name'] in names:
                 self.log.info(codes.Code(20608, f'"{i}"/'))
                 continue
-            names += (config['name'],)  # Save name to check on uniqueness
+            names.append(config['name'])  # Save name to check on uniqueness
             self.index.append(config)
-        self.log.info(codes.Code(20609, len(self.index)))
+        self.log.info(codes.Code(20609, str(len(self.index))))
+        return 20609
 
     def ignore(self, name: str, folder: bool = False) -> bool:
         if isinstance(name, str):
@@ -229,12 +233,15 @@ class ScriptIndex:
 
 
 class EventHandler:  # TODO: unload protection
+    log: logger.Logger
+    executors: Dict[str, api.EventsExecutor]
+
     def __init__(self):
-        self.log = Logger('EventHandler')
-        self.executors: Dict[str, api.EventsExecutor] = {}
+        self.log = logger.Logger('EventHandler')
+        self.executors = {}
 
     def add(self, name: str, executor: api.EventsExecutor) -> bool:
-        self.executors[name] = executor(name, Logger('EventsExecutor/' + name))
+        self.executors[name] = executor(name, logger.Logger('EventsExecutor/' + name))
         return True
 
     def delete(self, name: str) -> bool:
@@ -275,12 +282,20 @@ class EventHandler:  # TODO: unload protection
 
 
 class ScriptManager:
+    log: logger.Logger
+    lock: threading.Lock
+    index: ScriptIndex
+    scripts: Dict[str, dict]
+    parsers: Dict[str, api.Parser]
+    event_handler: EventHandler
+
     def __init__(self):
-        self.log = Logger('SM')
-        self.index: ScriptIndex = ScriptIndex()
-        self.scripts: dict = {}
-        self.parsers: dict = {}
-        self.event_handler: EventHandler = EventHandler()
+        self.log = logger.Logger('SM')
+        self.lock = threading.Lock()
+        self.index = ScriptIndex()
+        self.scripts = {}
+        self.parsers = {}
+        self.event_handler = EventHandler()
 
     def del_(self):
         del self.parsers
@@ -303,7 +318,7 @@ class ScriptManager:
             if script['keep']:
                 self.parsers[script['name']] = getattr(module, 'Parser')(
                     script['name'],
-                    Logger('Parser/' + script['name'])
+                    logger.Logger('Parser/' + script['name'])
                 )
             else:
                 self.parsers[script['name']] = getattr(module, 'Parser')
@@ -316,12 +331,13 @@ class ScriptManager:
     def _load(self, script) -> bool:
         if isinstance(script, str):
             script: dict = self.index.get_script(script)
-        module: ModuleType = importlib.import_module(script['path'].replace('/', '.'))
-        success = self._scan(script, module)
+        module: ModuleType = importlib.import_module(os.path.relpath(script['_path']).replace('/', '.'))
         self._destroy(module.__name__)
-        if success:
-            self.scripts[script['name']] = {k: v for k, v in script.items() if k != 'name'}
-            self.scripts[script['name']]['errors'] = -1
+        if success := self._scan(script, module):
+            self.scripts[script['name']] = {k: v for k, v in script.items()}
+            self.scripts[script['name']]['_hash'] = dirhash(script['_path'], 'sha1')
+            self.scripts[script['name']]['_errors'] = 0
+            del self.scripts[script['name']]['name']
         else:
             self.log.warn(codes.Code(30502, script['name']))
         return success
@@ -337,100 +353,110 @@ class ScriptManager:
             self.log.warn(codes.Code(30503, name))
             return False
 
-    def _reload(self, name: str) -> bool:
+    def _reload(self, name: str) -> Tuple[bool, int]:
         if self.scripts[name]['can_be_unloaded']:
             script: dict = self.scripts[name]
+            script['name'] = name
+            script['_hash'] = dirhash(script['_path'], 'sha1')
             if script:
-                module: ModuleType = importlib.import_module(script['path'].replace('/', '.'))
-                self._scan(script, module)
+                module: ModuleType = importlib.import_module(os.path.relpath(script['_path']).replace('/', '.'))
                 self._destroy(module.__name__)
+                if self._scan(script, module):
+                    return True, 0
+                else:
+                    self.log.warn(codes.Code(30502, name))
+                    return False, 30502
             else:
                 self.log.warn(codes.Code(30504, name))
-                return False
-            return True
+                return False, 30504
         else:
             self.log.warn(codes.Code(30505, name))
-            return False
+            return False, 30505
 
-    def load(self, script: str) -> bool:
-        script: dict = self.index.get_script(script)
-        if script and script['name'] in self.scripts:
-            self.log.warn(codes.Code(30506, script['name']))
-            return True
-        elif script and script['name'] not in self.scripts:
-            try:
-                if self._load(script):
-                    self.log.info(codes.Code(20501, script['name']))
-                    return True
-            except ImportError as e:
-                if storage.main.production:
-                    self.log.error(codes.Code(40501, script['name']))
+    def load(self, script: str) -> Tuple[bool, int]:
+        with self.lock:
+            script: dict = self.index.get_script(script)
+            if script and script['name'] in self.scripts:
+                self.log.warn(codes.Code(30506, script['name']))
+                return True, 30506
+            elif script and script['name'] not in self.scripts:
+                try:
+                    if self._load(script):
+                        self.log.info(codes.Code(20501, script['name']))
+                        return True, 20501
+                except ImportError as e:
+                    if storage.main.production:
+                        self.log.error(codes.Code(40501, script['name']))
+                    else:
+                        self.log.fatal(e)
+            else:
+                self.log.error(codes.Code(40502, script['name']))
+            return False, 40502
+
+    def unload(self, name: str) -> Tuple[bool, int]:
+        with self.lock:
+            if name in self.scripts:
+                if self._unload(name):
+                    self.log.info(codes.Code(20502, name))
+                    return True, 20502
+            else:
+                self.log.error(codes.Code(40503, name))
+            return False, 40503
+
+    def reload(self, name: str) -> Tuple[bool, int]:
+        with self.lock:
+            if name in self.scripts:
+                if (result := self._reload(name))[0]:
+                    self.log.info(codes.Code(20503, name))
+                    return True, 20503
                 else:
-                    self.log.fatal(e)
-        else:
-            self.log.error(codes.Code(40502, script['name']))
-        return False
+                    return False, result[1]
+            else:
+                self.log.error(codes.Code(40504, name))
+            return False, 40504
 
-    def unload(self, name: str) -> bool:
-        if name in self.scripts:
-            if self._unload(name):
-                self.log.info(codes.Code(20502, name))
-                return True
-        else:
-            self.log.error(codes.Code(40503, name))
-        return False
+    def load_all(self) -> Tuple[bool, int]:
+        with self.lock:
+            self.log.info(codes.Code(20504))
+            for i in set().union(self.scripts, [i['name'] for i in self.index.index]):  # TODO: Fix here
+                try:
+                    if self._load(i):
+                        self.log.info(codes.Code(20501, i))
+                except ImportError as e:
+                    if storage.main.production:
+                        self.log.error(codes.Code(40501, i))
+                    else:
+                        self.log.fatal(e)
+            self.log.info(codes.Code(20505))
+            return True, 20505
 
-    def reload(self, name: str) -> bool:
-        if name in self.scripts:
-            if self._reload(name):
-                self.log.info(codes.Code(20503, name))
-                return True
-        else:
-            self.log.error(codes.Code(40504, name))
-        return False
+    def unload_all(self) -> Tuple[bool, int]:
+        with self.lock:
+            self.log.info(codes.Code(20506))
+            for i in self.scripts.copy():
+                if self._unload(i):
+                    self.log.info(codes.Code(20502, i))
+            self.log.info(codes.Code(20507))
+            return True, 20507
 
-    def load_all(self) -> bool:
-        self.log.info(codes.Code(20504))
-        for i in set().union(self.scripts, [i['name'] for i in self.index.index]):  # TODO: Fix here
-            try:
-                if self._load(i):
-                    self.log.info(codes.Code(20501, i))
-            except ImportError as e:
-                if storage.main.production:
-                    self.log.error(codes.Code(40501, i))
-                else:
-                    self.log.fatal(e)
-        self.log.info(codes.Code(20505))
-        return True
+    def reload_all(self) -> Tuple[bool, int]:
+        with self.lock:
+            self.log.info(codes.Code(20508))
+            for i in self.scripts:
+                if self._reload(i):
+                    self.log.info(codes.Code(20503, i))
+            self.log.info(codes.Code(20509))
+            return True, 20509
 
-    def unload_all(self) -> bool:
-        self.log.info(codes.Code(20506))
-        for i in self.scripts.copy():
-            if self._unload(i):
-                self.log.info(codes.Code(20502, i))
-        self.log.info(codes.Code(20507))
-        return True
-
-    def reload_all(self) -> bool:
-        self.log.info(codes.Code(20508))
-        for i in self.scripts:
-            if self._reload(i):
-                self.log.info(codes.Code(20503, i))
-        self.log.info(codes.Code(20509))
-        return True
-
-    def hash(self) -> str:
-        hash_: hashlib._Hash = hashlib.sha1(b'')
-        for i in [i['hash'] for i in self.scripts.values()]:
-            hash_.update(i.encode())
-        return hash_.hexdigest()
+    def hash(self) -> Dict[str, str]:
+        return {i: self.scripts[i]['_hash'] for i in self.parsers if i in self.scripts}
 
     def get_parser(self, name: str):
         try:
             if self.scripts[name]['keep']:
                 return self.parsers[name]
             else:
-                return self.parsers[name](name, Logger(f'parser/{name}'))
+                return self.parsers[name](name, logger.Logger(f'parser/{name}'))
         except KeyError:
             raise ScriptManagerError(f'Script "{name}" not loaded')
 
@@ -440,13 +466,16 @@ class ScriptManager:
         except ScriptManagerError as e:
             raise e
         except Exception as e:
-            if self.scripts[name]['important']:
-                if self.scripts[name]['max-errors'] == -1 or \
-                        self.scripts[name]['errors'] < self.scripts[name]['max-errors']:
-                    self.scripts[name]['errors'] += 1
+            try:
+                if self.scripts[name]['important']:
+                    if self.scripts[name]['max-errors'] == -1 or \
+                            self.scripts[name]['errors'] < self.scripts[name]['max-errors']:
+                        self.scripts[name]['errors'] += 1
+                    else:
+                        self.log.warn(codes.Code(30507, name))
+                        self.unload(name)
+                    return False, None
                 else:
-                    self.log.warn(codes.Code(30507, name))
-                    self.unload(name)
-                return False, None
-            else:
-                raise e
+                    raise e
+            except KeyError:
+                raise ScriptManagerError(f'Script "{name}" not loaded')
