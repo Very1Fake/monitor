@@ -11,81 +11,84 @@ def _is_namedtuple(obj: object) -> bool:
         return False
 
 
-def check_config(config_file: str) -> None:
-    if os.path.isfile(config_file):
-        cache: dict = yaml.safe_load(open(config_file))
-        if isinstance(cache, dict):
+def config_check() -> None:
+    if os.path.isfile('./config.yaml'):
+        conf: dict = yaml.safe_load(open('./config.yaml'))
+        if isinstance(conf, dict):
             different = False
             snapshot_: dict = snapshot()
             for k, v in snapshot_.items():
-                if k not in cache or type(v) != type(cache[k]):
+                if k not in conf or not isinstance(v, type(conf[k])):
                     different = True
-                    cache[k] = snapshot_[k]
+                    conf[k] = snapshot_[k]
                 else:
                     if isinstance(snapshot_[k], dict):
                         for i in snapshot_[k]:
-                            if i not in cache[k]:
+                            if i not in conf[k]:
                                 different = True
-                                cache[k][i] = snapshot_[k][i]
-            if different:
-                yaml.safe_dump(cache, open(config_file, 'w+'))
-            return
-    yaml.safe_dump(snapshot(), open(config_file, 'w+'))
+                                conf[k][i] = snapshot_[k][i]
+            if not different:
+                return
+        yaml.safe_dump(snapshot(), open('./config.yaml', 'w+'))
+    else:
+        yaml.safe_dump(snapshot(), open('./config.yaml', 'w+'))
 
 
-def reload_config(config_file: str = 'core/config.yaml') -> None:
-    check_config(config_file)
-    for k, v in yaml.safe_load(open(config_file)).items():
-        if k.title().replace('_', '') in categories:
-            globals().update({k: globals()[k.title().replace('_', '')]()._replace(**v)})
-        elif k.upper() in categories:
-            globals().update({k: globals()[k.upper()]()._replace(**v)})
+def config_load() -> None:
+    config_check()
+    for k, v in yaml.safe_load(open('./config.yaml')).items():
+        if k in categories:
+            globals().update({k: globals()[k]._replace(**v)})
         else:
             globals().update({k: v})
+
+
+def config_dump() -> None:
+    config_check()
+    yaml.safe_dump(snapshot(), open('./config.yaml', 'w+'))
 
 
 class Main(NamedTuple):
     production: bool = False  # If True monitor will try to avoid fatal errors as possible
     logs_path: str = 'logs'
-    cache_path: str = '.cache'
+    cache_path: str = 'cache'
 
 
 class Analytics(NamedTuple):
     path: str = 'reports'
-    interval: int = 300  # Interval between report files creation (in seconds)
     datetime: bool = True  # True - all output time will presented as , False - all output time as timestamps
     datetime_format: str = '%Y-%m-%d %H:%M:%S.%f'
     beautify: bool = False
 
 
 class ThreadManager(NamedTuple):
-    tick: float = 1
+    tick: float = 1.
     lock_ticks: int = 16  # How much ticks lock can be acquired, then it will released
 
 
 class Pipe(NamedTuple):
     tick: float = .5  # Delta time for queue manage (in seconds)
-    wait: float = 10  # Timeout to join() when turning off monitor (in seconds)
+    wait: float = 10.  # Timeout to join() when turning off monitor (in seconds)
     success_hashes_time: int = 172800  # How long save hashes of success targets
 
 
 class Worker(NamedTuple):
-    count: int = 3  # Max workers count in normal condition
-    tick: float = 1  # Delta time for worker run loop
-    wait: float = 5
+    count: int = 5  # Max workers count in normal condition
+    tick: float = 1.  # Delta time for worker run loop
+    wait: float = 5.
 
 
 class IndexWorker(NamedTuple):
-    count: int = 3
-    tick: int = 1
+    count: int = 5
+    tick: float = 1.
     wait: int = 7
 
 
 class Queues(NamedTuple):
     index_queue_size: int = 256  # Size for index_queue (will be waiting if full)
-    index_queue_put_wait: float = 8
+    index_queue_put_wait: float = 8.
     target_queue_size: int = 512  # Size for target_queue (will be waiting if full)
-    target_queue_put_wait: float = 8
+    target_queue_put_wait: float = 8.
 
 
 class Logger(NamedTuple):
@@ -106,15 +109,15 @@ class API(NamedTuple):
 
 
 categories: tuple = (
-    'Main',
-    'Analytics',
-    'ThreadManager',
-    'Pipe',
-    'Worker',
-    'IndexWorker',
-    'Queues',
-    'Logger',
-    'API'
+    'main',
+    'analytics',
+    'thread_manager',
+    'pipe',
+    'worker',
+    'index_worker',
+    'queues',
+    'logger',
+    'api'
 )
 
 # Global variables
@@ -133,7 +136,7 @@ def snapshot() -> dict:
     snapshot_: dict = {}
     for k, v in globals().items():
         if not k.startswith('__') and not k.startswith('_') and \
-                k not in ('categories', 'check_config', 'reload_config', 'snapshot', 'os', 'yaml') and \
+                k not in ('categories', 'config_check', 'config_load', 'config_dump', 'snapshot', 'os', 'yaml') and \
                 not k[0].isupper():
             if _is_namedtuple(v):
                 snapshot_[k] = v._asdict()
@@ -143,4 +146,4 @@ def snapshot() -> dict:
 
 
 if __name__ == 'core.storage':
-    reload_config()
+    config_check()

@@ -11,21 +11,11 @@ class Analytics:
     def __init__(self):
         self.start_time: datetime = datetime.utcnow()
         self.active: bool = True
-        self.thread: threading.Thread = threading.Thread(target=self.loop, daemon=True)
-        self.thread.start()
 
     @staticmethod
     def _check() -> None:
         if not os.path.isdir(storage.analytics.path):
             os.makedirs(storage.analytics.path)
-
-    def loop(self):
-        last: float = time.time()
-        while self.active:
-            if storage.analytics.interval != 0 and last + storage.analytics.interval < time.time():
-                self.dump()
-                last: float = time.time()
-            time.sleep(1)
 
     @staticmethod
     def info_workers() -> dict:
@@ -130,8 +120,3 @@ class Analytics:
                                      f'{datetime.utcnow().strftime("%Y-%m-%d_%H:%M:%S")}.json',
             'w+'
         ), indent=4 if storage.analytics.beautify else None)
-
-    def stop(self):
-        self.active = False
-        self.thread.join()
-        self.dump(2)

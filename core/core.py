@@ -22,17 +22,6 @@ from . import storage
 # TODO: throw() for state setters
 
 
-config_file = 'core/config.yaml'
-
-
-def refresh() -> None:
-    storage.reload_config(config_file)
-
-
-def refresh_success_hashes():
-    success_hashes.update(cache.load_success_hashes())
-
-
 class MonitorError(Exception):
     pass
 
@@ -475,6 +464,12 @@ class ThreadManager(ThreadClass):
                 self.workers[self.workers_increment_id] = Worker(self.workers_increment_id)
                 self.log.info(codes.Code(20203, f'W-{self.workers_increment_id}'))
                 self.workers_increment_id += 1
+            elif len(self.workers) > storage.worker.count:
+                try:
+                    self.stop_worker()
+                except StateError:
+                    pass
+
             for v in list(self.workers.values()):
                 if not v.is_alive():
                     try:
@@ -493,6 +488,12 @@ class ThreadManager(ThreadClass):
                 self.index_workers[self.index_workers_increment_id] = IndexWorker(self.index_workers_increment_id)
                 self.log.info(codes.Code(20205, f'IW-{self.index_workers_increment_id}'))
                 self.index_workers_increment_id += 1
+            elif len(self.index_workers) > storage.index_worker.count:
+                try:
+                    self.stop_index_worker()
+                except StateError:
+                    pass
+
             for v in list(self.index_workers.values()):
                 if not v.is_alive():
                     try:
@@ -611,43 +612,37 @@ class Core:
     log: logger.Logger
     thread_manager: ThreadManager
 
-    def __init__(self, config_file_: str = None):
-        global config_file
-        if config_file_:
-            config_file = config_file_
-        refresh()
+    def __init__(self):
         self.state = 0
         self.log = logger.Logger('C')
         self.thread_manager = ThreadManager()
 
-    def turn_on(self) -> bool:
-        if storage.main.production:
-            self.log.info(codes.Code(20101))
-        script_manager.index.reindex()
-        script_manager.load_all()
-        script_manager.event_handler.monitor_turning_on()
-        refresh_success_hashes()
-        return True
-
-    @staticmethod
-    def turn_off() -> bool:
-        refresh()
-        script_manager.event_handler.monitor_turning_off()
-        return True
-
     def start(self):
         self.state = 1
-        commands.Commands()
 
-        analytic.dump(0)
-        self.turn_on()
-        server.run()
+        # Staring
+        storage.config_load()
 
-        self.thread_manager.start()
+        if storage.main.production:  # Notify about production mode
+            self.log.info(codes.Code(20101))
 
-        script_manager.event_handler.monitor_turned_on()
+        success_hashes.update(cache.load_success_hashes())  # Load success hashes from
 
-        try:
+        script_manager.index.reindex()  # Index scripts
+        script_manager.load_all()  # Load scripts
+
+        script_manager.event_handler.monitor_starting()
+
+        commands.Commands()  # Initialize UCTP commands
+        server.run()  # Run UCTP server
+
+        analytic.dump(0)  # Create startup report
+
+        self.thread_manager.start()  # Start pipeline
+        script_manager.event_handler.monitor_started()
+        # Starting end
+
+        try:  # Waiting loop
             while 0 < self.state < 2:
                 try:
                     if self.thread_manager.is_alive():
@@ -659,17 +654,27 @@ class Core:
                     self.state = 2
                 except MonitorError:
                     self.state = 2
-        finally:
+        finally:  # Stopping
             self.log.info(codes.Code(20103))
-            self.turn_off()
-            self.thread_manager.join(self.thread_manager.close())
+
+            server.stop()  # Stop UCTP server
+            storage.config_dump()
+
+            script_manager.event_handler.monitor_stopping()
+
+            self.thread_manager.join(self.thread_manager.close())  # Stop pipeline and wait
+
             self.log.info(codes.Code(20104))
-            cache.dump_success_hashes(success_hashes)
+            cache.dump_success_hashes(success_hashes)  # Dump success hashes
             self.log.info(codes.Code(20105))
-            script_manager.event_handler.monitor_turned_off()
-            analytic.stop()
-            script_manager.unload_all()
-            script_manager.del_()
+
+            script_manager.event_handler.monitor_stopped()
+
+            analytic.dump(2)  # Create stop report
+
+            script_manager.unload_all()  # Unload scripts
+            script_manager.del_()  # Delete all data about scripts (index, parsers, etc.)
+
             self.log.info(codes.Code(20106))
 
 

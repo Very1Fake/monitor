@@ -1,6 +1,9 @@
+from typing import Any
+
 import uctp
 
 from core import core
+from . import storage
 from . import logger
 
 
@@ -14,6 +17,11 @@ class Commands:
         core.server.commands.add_(self.analytics_snapshot)
         core.server.commands.add_(self.analytics_worker)
         core.server.commands.add_(self.analytics_index_worker)
+        core.server.commands.add_(self.config)
+        core.server.commands.add_(self.config_categories)
+        core.server.commands.add_(self.config_dump)
+        core.server.commands.add_(self.config_load)
+        core.server.commands.add_(self.config_set)
         core.server.commands.add_(self.script)
         core.server.commands.add_(self.script_load)
         core.server.commands.add_(self.script_unload)
@@ -38,9 +46,16 @@ class Commands:
         core.server.commands.alias('a-snapshot', 'analytics_snapshot')
         core.server.commands.alias('a-worker', 'analytics_worker')
         core.server.commands.alias('a-i-worker', 'analytics_index_worker')
+        core.server.commands.alias('c-cat', 'config_categories')
+        core.server.commands.alias('c-dump', 'config_dump')
+        core.server.commands.alias('c-load', 'config_load')
+        core.server.commands.alias('c-set', 'config_set')
         core.server.commands.alias('s-load', 'script_load')
         core.server.commands.alias('s-unload', 'script_unload')
         core.server.commands.alias('s-reload', 'script_reload')
+        core.server.commands.alias('s-load-all', 'scripts_load_all')
+        core.server.commands.alias('s-unload-all', 'scripts_unload_all')
+        core.server.commands.alias('s-reload-all', 'scripts_reload_all')
         core.server.commands.alias('s-reindex', 'scripts_reindex')
         core.server.commands.alias('p-pause', 'pipe_pause')
         core.server.commands.alias('p-resume', 'pipe_resume')
@@ -69,6 +84,44 @@ class Commands:
     @staticmethod
     def analytics_index_worker(id_: int) -> dict:
         return core.analytic.info_index_worker(id_)
+
+    @staticmethod
+    def config() -> dict:
+        return storage.snapshot()
+
+    @staticmethod
+    def config_categories() -> list:
+        return list(storage.categories)
+
+    @staticmethod
+    def config_dump() -> bool:
+        storage.config_dump()
+        return True
+
+    @staticmethod
+    def config_load() -> bool:
+        storage.config_load()
+        return True
+
+    @staticmethod
+    def config_set(namespace: str, key: str, value: Any) -> bool:
+        if not isinstance(namespace, str):
+            raise TypeError('namespace must be str')
+        elif not isinstance(key, str):
+            raise TypeError('key must be str')
+
+        if namespace in storage.categories:
+            if hasattr(getattr(storage, namespace), key):
+                try:
+                    setattr(storage, namespace, getattr(storage, namespace)._replace(
+                        **{key: type(getattr(getattr(storage, namespace), key))(value)}))
+                    return True
+                except ValueError:
+                    raise TypeError(f'value type must be "{type(getattr(getattr(storage, namespace), key))}"')
+            else:
+                raise IndexError(f'"{key}" not found in "{namespace}"')
+        else:
+            raise IndexError(f'Namespace "{namespace}" not found')
 
     @staticmethod
     def script(name: str) -> dict:

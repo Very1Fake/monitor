@@ -259,17 +259,17 @@ class EventHandler:  # TODO: unload protection
                 else:
                     self.log.fatal(e)
 
-    def monitor_turning_on(self) -> None:
-        self.exec('e_monitor_turning_on', ())
+    def monitor_starting(self) -> None:
+        self.exec('e_monitor_starting', ())
 
-    def monitor_turned_on(self) -> None:
-        self.exec('e_monitor_turned_on', ())
+    def monitor_started(self) -> None:
+        self.exec('e_monitor_started', ())
 
-    def monitor_turning_off(self) -> None:
-        self.exec('e_monitor_turning_off', ())
+    def monitor_stopping(self) -> None:
+        self.exec('e_monitor_stopping', ())
 
-    def monitor_turned_off(self) -> None:
-        self.exec('e_monitor_turned_off', ())
+    def monitor_stopped(self) -> None:
+        self.exec('e_monitor_stopped', ())
 
     def alert(self, code: codes.Code, thread: str) -> None:
         self.exec('e_alert', (code, thread))
