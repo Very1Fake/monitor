@@ -19,6 +19,7 @@ from . import logger
 from . import scripts
 from . import storage
 
+
 # TODO: throw() for state setters
 
 
@@ -278,7 +279,8 @@ class Pipe(ThreadClass):
                 try:
                     del success_hashes[:time.time()]  # Cleanup expired hashes
 
-                    if different := self._compare_parsers(self.parsers_hashes, script_manager.hash()):  # Check for scripts (loaded/unloaded)
+                    if different := self._compare_parsers(
+                            self.parsers_hashes, script_manager.hash()):  # Check for scripts (loaded/unloaded)
                         with script_manager.lock:
                             self.log.info(codes.Code(20301))
                             for i in different:

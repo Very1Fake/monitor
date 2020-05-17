@@ -7,11 +7,11 @@ Monitor - universal program for monitoring
 
 ### Minimum System Requirements
 - CPU: Any (x86_64 architecture)
-- CPU Speed: 1.8Hz
-- RAM: 512 MB
-- Free Disk space: 16 MB (HDD)
-- OS: Ubuntu 18.04.4 LTS (64-bit)
-- Python 3.6 (with pip)
+- CPU Speed: 1.8GHz
+- RAM: 1 GB
+- Free Disk space: 32 MB (HDD)
+- OS: Ubuntu 20.04 LTS (64-bit)
+- Python +3.8 (with pip)
 
 ### How to use
 
@@ -24,7 +24,7 @@ make
 To start use this command
 
 ```bash
-python3 -B -I start.py
+python3 -B start.py
 ```
 
 
