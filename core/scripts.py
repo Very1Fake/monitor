@@ -1,4 +1,3 @@
-import hashlib
 import importlib
 import json
 import os
@@ -13,9 +12,9 @@ from packaging.version import Version, InvalidVersion
 
 from . import api
 from . import codes
+from . import logger
 from . import storage
 from . import version
-from . import logger
 
 
 # TODO: Status codes
