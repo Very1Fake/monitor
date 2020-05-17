@@ -5,6 +5,9 @@ _codes: Dict[int, str] = {
     # System (100xx)
     10000: 'Test debug',
 
+    # Pipe (103xx)
+    10301: 'Reindexing parser',
+
     # Resolver (109xx)
     10901: 'Executing target',
     10902: 'Executing catalog',
@@ -37,6 +40,7 @@ _codes: Dict[int, str] = {
     # Pipe (203xx)
     20301: 'Reindexing parsers started',
     20302: 'Reindexing parsers complete',
+    20303: 'Parser reindexing complete',
 
     # ScriptManager (205xx)
     20501: 'Script loaded',
@@ -75,12 +79,13 @@ _codes: Dict[int, str] = {
     30000: 'Test warning',
 
     # ThreadManager (302xx)
-    30201: 'Pipe was unexpectedly stopped',
-    30202: 'Worker was unexpectedly stopped',
-    30203: 'IndexWorker was unexpectedly stopped',
+    30201: 'Pipe was stopped',
+    30202: 'Worker was stopped',
+    30203: 'IndexWorker was stopped',
+    30204: 'Lock forced released',
 
     # Pipe (303xx)
-    30301: 'Target lost while inserting in schedule',
+    30301: 'Parser reindexing failed',
     30302: 'Target lost in pipeline',
     30303: 'Catalog lost in pipeline',
 
@@ -105,10 +110,16 @@ _codes: Dict[int, str] = {
     30904: 'Unknown status received while executing target',
     30905: 'Catalog lost while executing (script not loaded)',
     30906: 'Wrong target list received while updating catalog',
+    30907: 'Target lost while inserting in schedule',
 
     # Error (4xxxx)
     # System (400xx)
     40000: 'Test error',
+
+    # ThreadManager (402xx)
+    40201: 'Pipe was unexpectedly stopped',
+    40202: 'Worker was unexpectedly stopped',
+    40203: 'IndexWorker was unexpectedly stopped',
 
     # Pipe (403xx)
     40301: 'Unknown index',
@@ -155,7 +166,6 @@ _codes: Dict[int, str] = {
 
     # IndexWorker (510xx)
     51001: 'Unexpectedly has turned off'
-
 }
 
 

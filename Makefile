@@ -7,6 +7,6 @@ init:
 	${PYTHON} -m pip install -r scripts/requirements.txt
 
 clean:
-	rm -r .cache/
-	rm -r .logs/
-	rm -r .report/
+	rm -r cache/
+	rm -r reports/
+	rm -r logs/

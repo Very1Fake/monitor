@@ -2,26 +2,21 @@ analytics:
   beautify: false
   datetime: true
   datetime_format: '%Y-%m-%d %H:%M:%S.%f'
-  interval: 300
   path: reports
 api:
   priority_IInterval: 50
   priority_IOnce: 10
   priority_TInterval:
-    - 100
-    - 100
+  - 100
+  - 100
   priority_TScheduled:
-    - 50
-    - 0
+  - 50
+  - 0
   priority_TSmart:
-    - 10
-    - 0
+  - 10
+  - 0
   priority_interval_default: 100
   priority_target_default: 1001
-pipe:
-  success_hashes_time: 604800
-  tick: 0.5
-  wait: 10
 index_worker:
   count: 5
   tick: 1
@@ -32,17 +27,22 @@ logger:
   mode: 1
   utc_time: true
 main:
-  cache_path: .cache
+  cache_path: cache
   logs_path: logs
   production: false
+pipe:
+  success_hashes_time: 604800
+  tick: 0.5
+  wait: 10.0
 queues:
-  index_queue_put_wait: 8
+  index_queue_put_wait: 8.0
   index_queue_size: 256
-  target_queue_put_wait: 8
-  target_queue_size: 1024
+  target_queue_put_wait: 8.0
+  target_queue_size: 512
 thread_manager:
-  tick: 1
+  lock_ticks: 16
+  tick: 1.0
 worker:
   count: 5
-  tick: 1
-  wait: 5
+  tick: 1.0
+  wait: 5.0

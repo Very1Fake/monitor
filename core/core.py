@@ -1,4 +1,5 @@
 import queue
+import random
 import threading
 import time
 import traceback
@@ -18,20 +19,8 @@ from . import logger
 from . import scripts
 from . import storage
 
+
 # TODO: throw() for state setters
-
-
-config_file = 'core/config.yaml'
-script_manager: scripts.ScriptManager = scripts.ScriptManager()
-success_hashes: library.Schedule = library.Schedule()
-
-
-def refresh() -> None:
-    storage.reload_config(config_file)
-
-
-def refresh_success_hashes():
-    success_hashes.update(cache.load_success_hashes())
 
 
 class MonitorError(Exception):
@@ -88,7 +77,7 @@ class ThreadClass(threading.Thread):
         return self._state
 
     @state.setter
-    def state(self, value: int) -> None:
+    def state(self, value: int) -> None:  # TODO: Set 5 from any state
         if isinstance(value, int):
             if self._state == 1 and value not in (2, 5):
                 raise StateError('In this state, you can change state only to 2 or 5')
@@ -109,16 +98,18 @@ class ThreadClass(threading.Thread):
 
 class Resolver:
     _log: logger.Logger
+    _insert_indices_lock: threading.Lock
     _insert_target_lock: threading.Lock
 
-    indices: library.Schedule
+    indices: library.UniqueSchedule
     targets: library.UniqueSchedule
 
     def __init__(self):
         self._log = logger.Logger('R')
+        self._insert_indices_lock = threading.Lock()
         self._insert_target_lock = threading.Lock()
 
-        self.indices = library.Schedule()
+        self.indices = library.UniqueSchedule()
         self.targets = library.UniqueSchedule()
 
     @staticmethod
@@ -173,7 +164,7 @@ class Resolver:
                     else:
                         self._log.error(codes.Code(40902, target))
                 except ValueError:
-                    self._log.fatal_msg(codes.Code(30301, target))
+                    self._log.warn(codes.Code(30907, target))
                 except IndexError:
                     self._log.test(f'Inserting non-unique target')
 
@@ -217,17 +208,21 @@ class Resolver:
             return 2, target.script
 
     def insert_index(self, index: api.IndexType, force: bool = False) -> None:  # TODO: Make `now` argument here
-        if isinstance(index, (api.IOnce, api.IInterval)):
-            if force:
-                self.indices[time.time()] = index
-            else:
-                if isinstance(index, api.IInterval):
-                    self.indices[time.time() + index.interval] = index
-        else:
-            if storage.main.production:
-                self._log.error(codes.Code(40901, index))
-            else:
-                self._log.fatal(CollectorError(codes.Code(40901, index)))
+        with self._insert_indices_lock:
+            try:
+                if isinstance(index, (api.IOnce, api.IInterval)):
+                    if force:
+                        self.indices[time.time()] = index
+                    else:
+                        if isinstance(index, api.IInterval):
+                            self.indices[time.time() + index.interval] = index
+                else:
+                    if storage.main.production:
+                        self._log.error(codes.Code(40901, index))
+                    else:
+                        self._log.fatal(CollectorError(codes.Code(40901, index)))
+            except IndexError:
+                self._log.test(f'Inserting non-unique index')
 
     def execute_index(self) -> Tuple[int, str]:  # TODO: Combine in one function for new API
         try:
@@ -258,26 +253,23 @@ class Resolver:
             return 2, index.script
 
 
-index_queue: queue.PriorityQueue = queue.PriorityQueue(storage.queues.index_queue_size)
-target_queue: queue.PriorityQueue = queue.PriorityQueue(storage.queues.target_queue_size)
-resolver: Resolver = Resolver()
-server = uctp.peer.Peer(
-    'monitor',
-    RSA.import_key(open('./monitor.pem').read()),
-    '0.0.0.0',
-    trusted=uctp.peer.Trusted(*yaml.safe_load(open('authority.yaml'))['trusted']),
-    aliases=uctp.peer.Aliases(yaml.safe_load(open('authority.yaml'))['aliases']),
-    auth_timeout=4,
-    buffer=8192
-)
-
-
 class Pipe(ThreadClass):
-    parsers_hash: str
+    parsers_hashes: Dict[str, str]
 
     def __init__(self):
         super().__init__('P', PipeError)
-        self.parsers_hash = ''
+        self.parsers_hashes = {}
+
+    @staticmethod
+    def _compare_parsers(old: Dict[str, str], new: Dict[str, str]):
+        different = []
+        for i in new:
+            if i in old:
+                if new[i] != old[i]:
+                    different.append(i)
+            else:
+                different.append(i)
+        return different
 
     def run(self) -> None:
         self.state = 1
@@ -287,16 +279,22 @@ class Pipe(ThreadClass):
                 try:
                     del success_hashes[:time.time()]  # Cleanup expired hashes
 
-                    if script_manager.hash() != self.parsers_hash:  # Check for scripts (loaded/unloaded)
-                        self.log.info('Parsers reindexing started')
-                        for i in script_manager.parsers:
-                            ok, index = script_manager.execute_parser(i, 'index', ())
-                            if ok:
-                                resolver.insert_index(index, True)
-                            else:
-                                self.log.error(f'Reindexing failed ({i})')
-                        self.parsers_hash = script_manager.hash()
-                        self.log.info('Parsers reindexing complete')
+                    if different := self._compare_parsers(
+                            self.parsers_hashes, script_manager.hash()):  # Check for scripts (loaded/unloaded)
+                        with script_manager.lock:
+                            self.log.info(codes.Code(20301))
+                            for i in different:
+                                self.log.debug(codes.Code(10301, i))
+                                ok, index = script_manager.execute_parser(i, 'index', ())
+                                if ok:
+                                    resolver.insert_index(index, True)
+                                    self.log.info(codes.Code(20303, i))
+                                else:
+                                    self.log.warn(codes.Code(30301, i))
+                            self.parsers_hashes = script_manager.hash()
+                            self.log.info(codes.Code(20302))
+                    elif self.parsers_hashes != script_manager.hash():
+                        self.parsers_hashes = script_manager.hash()
 
                     for i in resolver.indices.pop(slice(time.time())):  # Send indices
                         try:
@@ -321,12 +319,12 @@ class Pipe(ThreadClass):
                     break
             elif self.state == 2:  # Pausing state
                 self.log.info(codes.Code(20002))
-                self.state = 3
+                self._state = 3
             elif self.state == 3:  # Paused state
                 pass
             elif self.state == 4:  # Resuming state
                 self.log.info(codes.Code(20003))
-                self.state = 1
+                self._state = 1
             elif self.state == 5:  # Stopping state
                 self.log.info(codes.Code(20005))
                 break
@@ -338,14 +336,14 @@ class Worker(ThreadClass):
     id: int
     start_time: float
     speed: float
-    idle: int
+    idle: bool
     last_tick: float
 
     def __init__(self, id_: int):
         super().__init__(f'W-{id_}', WorkerError)
         self.id = id_
         self.speed = .0
-        self.idle = 0
+        self.idle = True
         self.start_time = time.time()
         self.last_tick = 0
 
@@ -355,18 +353,21 @@ class Worker(ThreadClass):
             start = self.last_tick = time.time()
             if self.state == 1:
                 try:
-                    resolver.execute_target()
+                    if resolver.execute_target()[0] > 1:
+                        self.idle = False
+                    else:
+                        self.idle = True
                 except Exception as e:
                     self.throw(codes.Code(50401, f'While working: {e.__class__.__name__}: {e.__str__()}'))
                     break
             elif self.state == 2:  # Pausing state
                 self.log.info(codes.Code(20002))
-                self.state = 3
+                self._state = 3
             elif self.state == 3:  # Paused state
                 pass
             elif self.state == 4:  # Resuming state
                 self.log.info(codes.Code(20003))
-                self.state = 1
+                self._state = 1
             elif self.state == 5:  # Stopping state
                 self.log.info(codes.Code(20005))
                 break
@@ -379,36 +380,41 @@ class IndexWorker(ThreadClass):
     id: int
     start_time: float
     speed: float
-    idle: int
+    idle: bool
     last_tick: float
 
     def __init__(self, id_: int):
         super().__init__(f'IW-{id_}', IndexWorkerError)
         self.id = id_
         self.speed = .0
-        self.idle = 0
+        self.idle = True
         self.start_time = time.time()
         self.last_tick = 0
 
     def run(self):
-        self.state = 1
+        self._state = 1
         while True:
             start = self.last_tick = time.time()
             if self.state == 1:
                 try:
-                    if resolver.execute_index()[0] < 2:
-                        resolver.execute_target()
+                    if resolver.execute_index()[0] < 1:
+                        if resolver.execute_target()[0] > 1:
+                            self.idle = False
+                        else:
+                            self.idle = True
+                    else:
+                        self.idle = False
                 except Exception as e:
                     self.throw(codes.Code(51001, f'While working: {e.__class__.__name__}: {e.__str__()}'))
                     break
             elif self.state == 2:  # Pausing state
                 self.log.info(codes.Code(20002))
-                self.state = 3
+                self._state = 3
             elif self.state == 3:  # Paused state
                 pass
             elif self.state == 4:  # Resuming state
                 self.log.info(codes.Code(20003))
-                self.state = 1
+                self._state = 1
             elif self.state == 5:  # Stopping state
                 self.log.info(codes.Code(20005))
                 break
@@ -418,74 +424,138 @@ class IndexWorker(ThreadClass):
 
 
 class ThreadManager(ThreadClass):
-    workers_increment_id: int
+    _lock_ticks: int
+
+    lock: threading.RLock
     index_workers_increment_id: int
-    workers: Dict[int, Worker]
     index_workers: Dict[int, IndexWorker]
+    workers_increment_id: int
+    workers: Dict[int, Worker]
     pipe: Pipe
 
     def __init__(self) -> None:
         super().__init__('TM', ThreadManagerError)
-        self.workers_increment_id = 0
+        self._lock_ticks = 0
+
+        self.lock = threading.RLock()
         self.index_workers_increment_id = 0
-        self.workers = {}
         self.index_workers = {}
+        self.workers_increment_id = 0
+        self.workers = {}
         self.pipe = None
 
     def check_pipe(self) -> None:
-        if not self.pipe:
-            self.pipe = Pipe()
-            self.log.info(codes.Code(20201))
-        if not self.pipe.is_alive():
-            try:
-                self.pipe.start()
-                self.log.info(codes.Code(20202))
-            except RuntimeError:
-                self.log.warn(codes.Code(30201))
-                self.pipe = None
+        with self.lock:
+            if not self.pipe:
+                self.pipe = Pipe()
+                self.log.info(codes.Code(20201))
+            if not self.pipe.is_alive():
+                try:
+                    self.pipe.start()
+                    self.log.info(codes.Code(20202))
+                except RuntimeError:
+                    if self.pipe.state == 5:
+                        self.log.warn(codes.Code(30201))
+                    else:
+                        self.log.error(codes.Code(40201))
+                    self.pipe = None
 
     def check_workers(self) -> None:
-        if len(self.workers) < storage.worker.count:
-            self.workers[self.workers_increment_id] = Worker(self.workers_increment_id)
-            self.log.info(codes.Code(20203, f'W-{self.workers_increment_id}'))
-            self.workers_increment_id += 1
-        for v in tuple(self.workers.values()):
-            if not v.is_alive():
+        with self.lock:
+            if len(self.workers) < storage.worker.count:
+                self.workers[self.workers_increment_id] = Worker(self.workers_increment_id)
+                self.log.info(codes.Code(20203, f'W-{self.workers_increment_id}'))
+                self.workers_increment_id += 1
+            elif len(self.workers) > storage.worker.count:
                 try:
-                    v.start()
-                    self.log.info(codes.Code(20204, f'{v.name}'))
-                except RuntimeError:
-                    self.log.warn(codes.Code(30202, f'{v.name}'))
-                    del self.workers[v.id]
+                    self.stop_worker()
+                except StateError:
+                    pass
+
+            for v in list(self.workers.values()):
+                if not v.is_alive():
+                    try:
+                        v.start()
+                        self.log.info(codes.Code(20204, str(v.id)))
+                    except RuntimeError:
+                        if v.state == 5:
+                            self.log.warn(codes.Code(30202, str(v.id)))
+                        else:
+                            self.log.error(codes.Code(40202, str(v.id)))
+                        del self.workers[v.id]
 
     def check_index_workers(self) -> None:
-        if len(self.index_workers) < storage.index_worker.count:
-            self.index_workers[self.index_workers_increment_id] = IndexWorker(self.index_workers_increment_id)
-            self.log.info(codes.Code(20205, f'IW-{self.index_workers_increment_id}'))
-            self.index_workers_increment_id += 1
-        for v in tuple(self.index_workers.values()):
-            if not v.is_alive():
+        with self.lock:
+            if len(self.index_workers) < storage.index_worker.count:
+                self.index_workers[self.index_workers_increment_id] = IndexWorker(self.index_workers_increment_id)
+                self.log.info(codes.Code(20205, f'IW-{self.index_workers_increment_id}'))
+                self.index_workers_increment_id += 1
+            elif len(self.index_workers) > storage.index_worker.count:
                 try:
-                    v.start()
-                    self.log.info(codes.Code(20206, f'{v.name}'))
-                except RuntimeError:
-                    self.log.warn(codes.Code(30203, f'{v.name}'))
-                    del self.index_workers[v.id]
+                    self.stop_index_worker()
+                except StateError:
+                    pass
+
+            for v in list(self.index_workers.values()):
+                if not v.is_alive():
+                    try:
+                        v.start()
+                        self.log.info(codes.Code(20206, str(v.id)))
+                    except RuntimeError:
+                        if v.state == 5:
+                            self.log.warn(codes.Code(30203, str(v.id)))
+                        else:
+                            self.log.error(codes.Code(40203, str(v.id)))
+                        del self.index_workers[v.id]
+
+    def stop_worker(self, id_: int = -1, blocking: bool = False) -> int:
+        with self.lock:
+            if id_ < 0:
+                id_ = random.choice(list(self.workers))
+            self.workers[id_].state = 5
+
+            if blocking:
+                self.workers[id_].join(storage.worker.wait)
+
+            return id_
+
+    def stop_index_worker(self, id_: int = -1, blocking: bool = False) -> int:
+        with self.lock:
+            if id_ < 0:
+                id_ = random.choice(list(self.index_workers))
+            self.index_workers[id_].state = 5
+
+            if blocking:
+                self.index_workers[id_].join(storage.index_worker.wait)
+
+            return id_
 
     def stop_threads(self) -> None:
-        for i in self.workers.values():
-            i.state = 5
-        for i in tuple(self.workers):
-            self.workers[i].join(storage.worker.wait)
-            del self.workers[i]
-        for i in self.index_workers.values():
-            i.state = 5
-        for i in tuple(self.index_workers):
-            self.index_workers[i].join(storage.index_worker.wait)
-            del self.index_workers[i]
-        self.pipe.state = 5
-        self.pipe.join(storage.pipe.wait)
-        self.pipe = None
+        with self.lock:
+            for i in self.workers.values():
+                try:
+                    i.state = 5
+                except StateError:
+                    continue
+            for i in tuple(self.workers):
+                self.workers[i].join(storage.worker.wait)
+                del self.workers[i]
+
+            for i in self.index_workers.values():
+                try:
+                    i.state = 5
+                except StateError:
+                    continue
+            for i in tuple(self.index_workers):
+                self.index_workers[i].join(storage.index_worker.wait)
+                del self.index_workers[i]
+
+            try:
+                self.pipe.state = 5
+            except StateError:
+                pass
+            self.pipe.join(storage.pipe.wait)
+            self.pipe = None
 
     def run(self) -> None:
         self.state = 1
@@ -493,9 +563,24 @@ class ThreadManager(ThreadClass):
             try:
                 start: float = time.time()
                 if self.state == 1:
-                    self.check_pipe()
-                    self.check_workers()
-                    self.check_index_workers()
+                    if self.lock.acquire(False):
+                        self.check_pipe()
+                        self.check_workers()
+                        self.check_index_workers()
+                        try:
+                            self._lock_ticks = 0
+                            self.lock.release()
+                        except RuntimeError:
+                            pass
+                    else:
+                        if self._lock_ticks == storage.thread_manager.lock_ticks:
+                            self.log.warn(codes.Code(30204))
+                            try:
+                                self.lock.release()
+                            except RuntimeError:
+                                pass
+                        else:
+                            self._lock_ticks += 1
                 elif self.state == 2:  # Pausing state
                     self.log.info(codes.Code(20002))
                     self.state = 3
@@ -524,48 +609,42 @@ class ThreadManager(ThreadClass):
                 storage.worker.wait + 1) + len(self.index_workers) * (storage.index_worker.wait + 1)
 
 
-class Main:
+class Core:
     state: int
     log: logger.Logger
     thread_manager: ThreadManager
 
-    def __init__(self, config_file_: str = None):
-        global config_file
-        if config_file_:
-            config_file = config_file_
-        refresh()
+    def __init__(self):
         self.state = 0
         self.log = logger.Logger('C')
         self.thread_manager = ThreadManager()
 
-    def turn_on(self) -> bool:
-        if storage.main.production:
-            self.log.info(codes.Code(20101))
-        script_manager.index.reindex()
-        script_manager.load_all()
-        script_manager.event_handler.monitor_turning_on()
-        refresh_success_hashes()
-        return True
-
-    @staticmethod
-    def turn_off() -> bool:
-        refresh()
-        script_manager.event_handler.monitor_turning_off()
-        return True
-
     def start(self):
         self.state = 1
-        commands.Commands(server, self)
 
-        analytics.analytics.dump(0)
-        self.turn_on()
-        server.run()
+        # Staring
+        storage.config_load()
 
-        self.thread_manager.start()
+        if storage.main.production:  # Notify about production mode
+            self.log.info(codes.Code(20101))
 
-        script_manager.event_handler.monitor_turned_on()
+        success_hashes.update(cache.load_success_hashes())  # Load success hashes from
 
-        try:
+        script_manager.index.reindex()  # Index scripts
+        script_manager.load_all()  # Load scripts
+
+        script_manager.event_handler.monitor_starting()
+
+        commands.Commands()  # Initialize UCTP commands
+        server.run()  # Run UCTP server
+
+        analytic.dump(0)  # Create startup report
+
+        self.thread_manager.start()  # Start pipeline
+        script_manager.event_handler.monitor_started()
+        # Starting end
+
+        try:  # Waiting loop
             while 0 < self.state < 2:
                 try:
                     if self.thread_manager.is_alive():
@@ -577,15 +656,46 @@ class Main:
                     self.state = 2
                 except MonitorError:
                     self.state = 2
-        finally:
+        finally:  # Stopping
             self.log.info(codes.Code(20103))
-            self.turn_off()
-            self.thread_manager.join(self.thread_manager.close())
+
+            server.stop()  # Stop UCTP server
+            storage.config_dump()
+
+            script_manager.event_handler.monitor_stopping()
+
+            self.thread_manager.join(self.thread_manager.close())  # Stop pipeline and wait
+
             self.log.info(codes.Code(20104))
-            cache.dump_success_hashes(success_hashes)
+            cache.dump_success_hashes(success_hashes)  # Dump success hashes
             self.log.info(codes.Code(20105))
-            script_manager.event_handler.monitor_turned_off()
-            analytics.analytics.stop()
-            script_manager.unload_all()
-            script_manager.del_()
+
+            script_manager.event_handler.monitor_stopped()
+
+            analytic.dump(2)  # Create stop report
+
+            script_manager.unload_all()  # Unload scripts
+            script_manager.del_()  # Delete all data about scripts (index, parsers, etc.)
+
             self.log.info(codes.Code(20106))
+
+
+if __name__ == 'core.core':
+    script_manager: scripts.ScriptManager = scripts.ScriptManager()
+    success_hashes: library.Schedule = library.Schedule()
+
+    analytic: analytics.Analytics = analytics.Analytics()
+    index_queue: queue.PriorityQueue = queue.PriorityQueue(storage.queues.index_queue_size)
+    target_queue: queue.PriorityQueue = queue.PriorityQueue(storage.queues.target_queue_size)
+    resolver: Resolver = Resolver()
+    server = uctp.peer.Peer(
+        'monitor',
+        RSA.import_key(open('./monitor.pem').read()),
+        '0.0.0.0',
+        trusted=uctp.peer.Trusted(*yaml.safe_load(open('authority.yaml'))['trusted']),
+        aliases=uctp.peer.Aliases(yaml.safe_load(open('authority.yaml'))['aliases']),
+        auth_timeout=4,
+        buffer=8192
+    )
+
+    monitor: Core = Core()
