@@ -3,7 +3,7 @@ import os
 import time
 from datetime import datetime
 
-from core import storage, core, __version__
+from . import storage, core, __version__
 
 
 class Analytics:

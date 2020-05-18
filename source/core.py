@@ -140,7 +140,7 @@ class Resolver:
                 if v.script in script_manager.scripts and v.script in script_manager.parsers:
                     targets.append(v)
                 else:
-                    self._log.warn(codes.Code(30901, v))
+                    self._log.warn(codes.Code(30901, v), threading.current_thread().name)
             del self.targets[:time_]
         return targets
 
@@ -162,9 +162,9 @@ class Resolver:
                     elif isinstance(target, api.TInterval):
                         self.targets[time.time() + target.interval] = target
                     else:
-                        self._log.error(codes.Code(40902, target))
+                        self._log.error(codes.Code(40902, target), threading.current_thread().name)
                 except ValueError:
-                    self._log.warn(codes.Code(30907, target))
+                    self._log.warn(codes.Code(30907, target), threading.current_thread().name)
                 except IndexError:
                     self._log.test(f'Inserting non-unique target')
 
@@ -179,33 +179,33 @@ class Resolver:
         self._log.debug(codes.Code(10901, str(target)), threading.current_thread().name)
 
         try:
-            ok, result = script_manager.execute_parser(target.script, 'execute', (target,))
+            result = script_manager.execute_parser(target.script, 'execute', (target,))
         except scripts.ScriptManagerError:
             self._log.warn(codes.Code(30902, str(target)), threading.current_thread().name)
             return 1, target.script
-
-        if ok:
-            if isinstance(result, api.SWaiting):
-                self.insert_target(result.target)
-                return 3, target.script
-            elif isinstance(result, api.SSuccess):
-                success_hashes[time.time() + storage.pipe.success_hashes_time] = target.hash()
-                script_manager.event_handler.success_status(result)
-                self._log.info(codes.Code(20901, str(result)), threading.current_thread().name)
-                return 4, target.script
-            elif isinstance(result, api.SFail):
-                script_manager.event_handler.fail_status(result)
-                self._log.warn(codes.Code(30903, target), threading.current_thread().name)
-                return 5, target.script
-            else:
-                self._log.warn(codes.Code(30904, target), threading.current_thread().name)
-                return 6, target.script
-        else:
-            if storage.main.production:
-                self._log.error(codes.Code(40903, target), threading.current_thread().name)
-            else:
-                self._log.fatal(WorkerError(codes.Code(40903, target)), parent=threading.current_thread().name)
+        except Exception as e:
+            self._log.fatal_msg(
+                codes.Code(40903, f'{target}: {e.__class__.__name__}: {str(e)}'),
+                traceback.format_exc(),
+                threading.current_thread().name
+            )
             return 2, target.script
+
+        if isinstance(result, api.SWaiting):
+            self.insert_target(result.target)
+            return 3, target.script
+        elif isinstance(result, api.SSuccess):
+            success_hashes[time.time() + storage.pipe.success_hashes_time] = target.hash()
+            script_manager.event_handler.success_status(result)
+            self._log.info(codes.Code(20901, str(result)), threading.current_thread().name)
+            return 4, target.script
+        elif isinstance(result, api.SFail):
+            script_manager.event_handler.fail_status(result)
+            self._log.warn(codes.Code(30903, target), threading.current_thread().name)
+            return 5, target.script
+        else:
+            self._log.warn(codes.Code(30904, target), threading.current_thread().name)
+            return 6, target.script
 
     def insert_index(self, index: api.IndexType, force: bool = False) -> None:  # TODO: Make `now` argument here
         with self._insert_indices_lock:
@@ -218,9 +218,10 @@ class Resolver:
                             self.indices[time.time() + index.interval] = index
                 else:
                     if storage.main.production:
-                        self._log.error(codes.Code(40901, index))
+                        self._log.error(codes.Code(40901, index), threading.current_thread().name)
                     else:
-                        self._log.fatal(CollectorError(codes.Code(40901, index)))
+                        self._log.fatal(CollectorError(codes.Code(40901, index)),
+                                        parent=threading.current_thread().name)
             except IndexError:
                 self._log.test(f'Inserting non-unique index')
 
@@ -233,24 +234,27 @@ class Resolver:
         self._log.debug(codes.Code(10902, index), threading.current_thread().name)
 
         try:
-            ok, targets = script_manager.execute_parser(index.script, 'targets', ())
+            targets = script_manager.execute_parser(index.script, 'targets', ())
         except scripts.ScriptManagerError:
             self._log.warn(codes.Code(30905, index), threading.current_thread().name)
             return 1, index.script
-
-        if ok:
-            if isinstance(targets, (tuple, list)):
-                for i in targets:
-                    self.insert_target(i)
-                self.insert_index(index)
-                self._log.debug(codes.Code(20902, index), threading.current_thread().name)
-                return 3, index.script
-            else:
-                self._log.warn(codes.Code(30906, index), threading.current_thread().name)
-                return 4, index.script
-        else:
-            self._log.error(codes.Code(40904, index), threading.current_thread().name)
+        except Exception as e:
+            self._log.fatal_msg(
+                codes.Code(40904, f'{index}: {e.__class__.__name__}: {str(e)}'),
+                traceback.format_exc(),
+                threading.current_thread().name
+            )
             return 2, index.script
+
+        if isinstance(targets, (tuple, list)):
+            for i in targets:
+                self.insert_target(i)
+            self.insert_index(index)
+            self._log.debug(codes.Code(20902, index), threading.current_thread().name)
+            return 3, index.script
+        else:
+            self._log.warn(codes.Code(30906, index), threading.current_thread().name)
+            return 4, index.script
 
 
 class Pipe(ThreadClass):
@@ -285,12 +289,14 @@ class Pipe(ThreadClass):
                             self.log.info(codes.Code(20301))
                             for i in different:
                                 self.log.debug(codes.Code(10301, i))
-                                ok, index = script_manager.execute_parser(i, 'index', ())
-                                if ok:
+                                try:
+                                    index = script_manager.execute_parser(i, 'index', ())
                                     resolver.insert_index(index, True)
                                     self.log.info(codes.Code(20303, i))
-                                else:
-                                    self.log.warn(codes.Code(30301, i))
+                                except scripts.ScriptManagerError:
+                                    print('1' * 128)
+                                except Exception as e:
+                                    self.log.warn(codes.Code(30301, f'{i}: {e.__class__.__name__}: {str(e)}'))
                             self.parsers_hashes = script_manager.hash()
                             self.log.info(codes.Code(20302))
                     elif self.parsers_hashes != script_manager.hash():
@@ -315,7 +321,7 @@ class Pipe(ThreadClass):
                             self.log.warn(codes.Code(30302, i))
 
                 except Exception as e:
-                    self.throw(codes.Code(50301, f'While working: {e.__class__.__name__}: {e.__str__()}'))
+                    self.throw(codes.Code(50301, f'While working: {e.__class__.__name__}: {str(e)}'))
                     break
             elif self.state == 2:  # Pausing state
                 self.log.info(codes.Code(20002))
@@ -358,7 +364,7 @@ class Worker(ThreadClass):
                     else:
                         self.idle = True
                 except Exception as e:
-                    self.throw(codes.Code(50401, f'While working: {e.__class__.__name__}: {e.__str__()}'))
+                    self.throw(codes.Code(50401, f'While working: {e.__class__.__name__}: {str(e)}'))
                     break
             elif self.state == 2:  # Pausing state
                 self.log.info(codes.Code(20002))
@@ -405,7 +411,7 @@ class IndexWorker(ThreadClass):
                     else:
                         self.idle = False
                 except Exception as e:
-                    self.throw(codes.Code(51001, f'While working: {e.__class__.__name__}: {e.__str__()}'))
+                    self.throw(codes.Code(51001, f'While working: {e.__class__.__name__}: {str(e)}'))
                     break
             elif self.state == 2:  # Pausing state
                 self.log.info(codes.Code(20002))
@@ -442,13 +448,10 @@ class ThreadManager(ThreadClass):
         self.index_workers = {}
         self.workers_increment_id = 0
         self.workers = {}
-        self.pipe = None
+        self.pipe = Pipe()
 
     def check_pipe(self) -> None:
         with self.lock:
-            if not self.pipe:
-                self.pipe = Pipe()
-                self.log.info(codes.Code(20201))
             if not self.pipe.is_alive():
                 try:
                     self.pipe.start()
@@ -458,7 +461,8 @@ class ThreadManager(ThreadClass):
                         self.log.warn(codes.Code(30201))
                     else:
                         self.log.error(codes.Code(40201))
-                    self.pipe = None
+                    self.pipe = Pipe()
+                    self.log.info(codes.Code(20201))
 
     def check_workers(self) -> None:
         with self.lock:
@@ -598,9 +602,9 @@ class ThreadManager(ThreadClass):
                 time.sleep(storage.thread_manager.tick - delta if
                            storage.thread_manager.tick - delta >= 0 else 0)
             except Exception as e:
-                self.log.fatal_msg(codes.Code(50201, f'{e.__class__.__name__}: {e.__str__()}'), traceback.format_exc())
+                self.log.fatal_msg(codes.Code(50201, f'{e.__class__.__name__}: {str(e)}'), traceback.format_exc())
                 self.stop_threads()
-                self.throw(codes.Code(50201, f'While working: {e.__class__.__name__}: {e.__str__()}'))
+                self.throw(codes.Code(50201, f'While working: {e.__class__.__name__}: {str(e)}'))
                 break
 
     def close(self) -> float:
@@ -616,19 +620,19 @@ class Core:
 
     def __init__(self):
         self.state = 0
-        self.log = logger.Logger('C')
+        self.log = logger.Logger('M')
         self.thread_manager = ThreadManager()
 
     def start(self):
         self.state = 1
 
         # Staring
-        storage.config_load()
+        storage.config_load()  # Load ./config.yaml
+        script_manager.index.config_load()  # Load ./scripts/config.yaml
+        success_hashes.update(cache.load_success_hashes())  # Load success hashes from cache
 
         if storage.main.production:  # Notify about production mode
             self.log.info(codes.Code(20101))
-
-        success_hashes.update(cache.load_success_hashes())  # Load success hashes from
 
         script_manager.index.reindex()  # Index scripts
         script_manager.load_all()  # Load scripts
@@ -680,7 +684,7 @@ class Core:
             self.log.info(codes.Code(20106))
 
 
-if __name__ == 'core.core':
+if __name__ == 'source.core':
     script_manager: scripts.ScriptManager = scripts.ScriptManager()
     success_hashes: library.Schedule = library.Schedule()
 

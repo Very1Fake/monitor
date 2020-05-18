@@ -19,7 +19,7 @@ api:
   priority_target_default: 1001
 index_worker:
   count: 5
-  tick: 1
+  tick: 1.0
   wait: 7
 logger:
   level: 4

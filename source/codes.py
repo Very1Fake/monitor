@@ -60,9 +60,10 @@ _codes: Dict[int, str] = {
     20604: 'Skipping script (config not detected)',
     20605: 'Skipping script (bad config)',
     20606: 'Skipping script (script incompatible with core)',
-    20607: 'Skipping script (ignored by config)',
+    20607: 'Skipping script (script in blacklist)',
     20608: 'Skipping script (script with this name is already indexed)',
     20609: 'N script(s) indexed',
+    20610: 'Skipping config (script not in whitelist)',
 
     # Logger (208xx)
     20801: 'Log level changed',
@@ -73,6 +74,11 @@ _codes: Dict[int, str] = {
     # Resolver (209xx)
     20901: 'Successful target execution',
     20902: 'Catalog updated',
+
+    # Commands (211xx)
+    21101: 'Command executing',
+    21102: 'Command executed',
+    21103: 'Command execute',
 
     # Warning (3xxxx)
     # System (300xx)
@@ -104,7 +110,7 @@ _codes: Dict[int, str] = {
     30803: 'Meaningless time change (changing to the same value)',
 
     # Resolver (309xx)
-    30901: 'Target lost (script not loaded)',
+    30901: 'Target lost while retrieving (script not loaded)',
     30902: 'Target lost while executing (script not loaded)',
     30903: 'Target failed',
     30904: 'Unknown status received while executing target',
@@ -137,6 +143,8 @@ _codes: Dict[int, str] = {
     40502: 'Can\'t load script (script not indexed)',
     40503: 'Can\'t unload script (script isn\'t loaded)',
     40504: 'Can\'t reload script (script isn\'t loaded)',
+    40505: 'Script cannot be reloaded (folder not found)',
+    40506: 'Script cannot be reloaded (script not in index)',
 
     # Logger (408xx)
     40801: 'Can\'t change level (possible values (0, 1, 2, 3, 4, 5))',

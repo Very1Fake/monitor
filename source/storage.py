@@ -18,20 +18,19 @@ def config_check() -> None:
             different = False
             snapshot_: dict = snapshot()
             for k, v in snapshot_.items():
-                if k not in conf or not isinstance(v, type(conf[k])):
+                if k not in conf or not isinstance(conf[k], type(v)):
                     different = True
-                    conf[k] = snapshot_[k]
-                else:
-                    if isinstance(snapshot_[k], dict):
-                        for i in snapshot_[k]:
-                            if i not in conf[k]:
-                                different = True
-                                conf[k][i] = snapshot_[k][i]
-            if not different:
+                    conf[k] = v
+                elif isinstance(snapshot_[k], dict):
+                    for k2, v2 in snapshot_[k].items():
+                        if k2 not in conf[k] or not isinstance(conf[k][k2], type(v2)):
+                            different = True
+                            conf[k][k2] = v2
+            if different:
+                yaml.safe_dump(conf, open('./config.yaml', 'w+'))
+            else:
                 return
-        yaml.safe_dump(snapshot(), open('./config.yaml', 'w+'))
-    else:
-        yaml.safe_dump(snapshot(), open('./config.yaml', 'w+'))
+    yaml.safe_dump(snapshot(), open('./config.yaml', 'w+'))
 
 
 def config_load() -> None:
@@ -44,7 +43,6 @@ def config_load() -> None:
 
 
 def config_dump() -> None:
-    config_check()
     yaml.safe_dump(snapshot(), open('./config.yaml', 'w+'))
 
 
@@ -145,5 +143,5 @@ def snapshot() -> dict:
     return snapshot_
 
 
-if __name__ == 'core.storage':
+if __name__ == 'storage.storage':
     config_check()
