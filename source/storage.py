@@ -28,8 +28,7 @@ def config_check() -> None:
                             conf[k][k2] = v2
             if different:
                 yaml.safe_dump(conf, open('./config.yaml', 'w+'))
-            else:
-                return
+            return
     yaml.safe_dump(snapshot(), open('./config.yaml', 'w+'))
 
 
@@ -67,7 +66,7 @@ class ThreadManager(NamedTuple):
 class Pipe(NamedTuple):
     tick: float = .5  # Delta time for queue manage (in seconds)
     wait: float = 10.  # Timeout to join() when turning off monitor (in seconds)
-    success_hashes_time: int = 172800  # How long save hashes of success targets
+    success_hashes_time: int = 604800  # How long save hashes of success targets
 
 
 class Worker(NamedTuple):
@@ -106,6 +105,13 @@ class API(NamedTuple):
     priority_target_default: int = 1001
 
 
+class Provider(NamedTuple):
+    delay: float = 7.5
+    max_bad: int = 25
+    timeout: float = 3.
+    test_url: str = 'http://google.com/'
+
+
 categories: tuple = (
     'main',
     'analytics',
@@ -115,7 +121,8 @@ categories: tuple = (
     'index_worker',
     'queues',
     'logger',
-    'api'
+    'api',
+    'provider'
 )
 
 # Global variables
@@ -128,6 +135,7 @@ index_worker: IndexWorker = IndexWorker()
 queues: Queues = Queues()
 logger: Logger = Logger()
 api: API = API()
+provider: Provider = Provider()
 
 
 def snapshot() -> dict:

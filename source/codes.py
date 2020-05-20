@@ -80,6 +80,11 @@ _codes: Dict[int, str] = {
     21102: 'Command executed',
     21103: 'Command execute',
 
+    # Provider (212xx)
+    21201: 'Proxies dumped',
+    21202: 'Checking proxy',
+    21203: 'Checking proxy (OK)',
+
     # Warning (3xxxx)
     # System (300xx)
     30000: 'Test warning',
@@ -102,7 +107,7 @@ _codes: Dict[int, str] = {
     30504: 'Script cannot be unloaded (_reload)',
     30505: 'Script not indexed but still loaded',
     30506: 'Script already loaded',
-    30507: 'Max errors for script reached unloading',
+    30507: 'Max errors for script reached, unloading',
 
     # Logger (308xx)
     30801: 'Meaningless level change (changing to the same value)',
@@ -117,6 +122,15 @@ _codes: Dict[int, str] = {
     30905: 'Catalog lost while executing (script not loaded)',
     30906: 'Wrong target list received while updating catalog',
     30907: 'Target lost while inserting in schedule',
+
+    # Provider (312xx)
+    31201: 'Proxy added',
+    31202: 'Proxy removed',
+    31203: 'Proxies loaded',
+
+    # SubProvider (313xx)
+    31301: 'Request connection error',
+    31302: 'Request timeout',
 
     # Error (4xxxx)
     # System (400xx)
@@ -155,6 +169,10 @@ _codes: Dict[int, str] = {
     40902: 'Unknown target type (while inserting)',
     40903: 'Target execution failed',
     40904: 'Catalog execution failed',
+
+    # Provider (412xx)
+    41201: 'Bad proxy',
+    41202: 'Checking proxy (FAILED)',
 
     # Fatal (5xxxx)
     # System (500xx)

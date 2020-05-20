@@ -3,6 +3,7 @@ from typing import Any
 
 from uctp.peer import Peer
 
+from . import api
 from . import codes
 from . import core
 from . import logger
@@ -25,6 +26,12 @@ class Commands:
         core.server.commands.add_(self.config_load)
         core.server.commands.add_(self.config_set)
         core.server.commands.add_(self.log_file_reset)
+        core.server.commands.add_(self.proxy)
+        core.server.commands.add_(self.proxies)
+        core.server.commands.add_(self.proxy_dump)
+        core.server.commands.add_(self.proxy_load)
+        core.server.commands.add_(self.proxy_add)
+        core.server.commands.add_(self.proxy_remove)
         core.server.commands.add_(self.script)
         core.server.commands.add_(self.scripts)
         core.server.commands.add_(self.script_load)
@@ -63,6 +70,10 @@ class Commands:
         core.server.commands.alias('c-load', 'config_load')
         core.server.commands.alias('c-set', 'config_set')
         core.server.commands.alias('l-file-reset', 'log_file_reset')
+        core.server.commands.alias('p-dump', 'proxy_dump')
+        core.server.commands.alias('p-load', 'proxy_load')
+        core.server.commands.alias('p-add', 'proxy_add')
+        core.server.commands.alias('p-remove', 'proxy_remove')
         core.server.commands.alias('s-load', 'script_load')
         core.server.commands.alias('s-unload', 'script_unload')
         core.server.commands.alias('s-reload', 'script_reload')
@@ -152,6 +163,37 @@ class Commands:
         self.log.info(codes.Code(21101, f'{peer.name}: {inspect.stack()[0][3]}'))
         with logger.write_lock:
             logger.file = None
+        self.log.info(codes.Code(21102, f'{peer.name}: {inspect.stack()[0][3]}'))
+        return True
+
+    def proxy(self, peer: Peer, url: str) -> dict:
+        self.log.info(codes.Code(21103,  f'{peer.name}: {inspect.stack()[0][3]}'))
+        return api.provider.proxies[url].export()
+
+    def proxies(self, peer: Peer) -> list:
+        self.log.info(codes.Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))
+        return [i.url for i in api.provider.proxies.values()]
+
+    def proxy_dump(self, peer: Peer) -> bool:
+        api.provider.proxy_dump()
+        self.log.info(codes.Code(21102, f'{peer.name}: {inspect.stack()[0][3]}'))
+        return True
+
+    def proxy_load(self, peer: Peer) -> bool:
+        self.log.info(codes.Code(21101, f'{peer.name}: {inspect.stack()[0][3]}'))
+        api.provider.proxy_load()
+        self.log.info(codes.Code(21102, f'{peer.name}: {inspect.stack()[0][3]}'))
+        return True
+
+    def proxy_add(self, peer: Peer, url: str) -> bool:
+        self.log.info(codes.Code(21101, f'{peer.name}: {inspect.stack()[0][3]}'))
+        api.provider.proxy_add(url)
+        self.log.info(codes.Code(21102, f'{peer.name}: {inspect.stack()[0][3]}'))
+        return True
+
+    def proxy_remove(self, peer: Peer, url: str) -> bool:
+        self.log.info(codes.Code(21101, f'{peer.name}: {inspect.stack()[0][3]}'))
+        api.provider.proxy_remove(url)
         self.log.info(codes.Code(21102, f'{peer.name}: {inspect.stack()[0][3]}'))
         return True
 

@@ -346,7 +346,8 @@ class ScriptManager:
             if script['keep']:
                 self.parsers[script['name']] = getattr(module, 'Parser')(
                     script['name'],
-                    logger.Logger('Parser/' + script['name'])
+                    logger.Logger('Parser/' + script['name']),
+                    api.SubProvider(script['name'])
                 )
             else:
                 self.parsers[script['name']] = getattr(module, 'Parser')

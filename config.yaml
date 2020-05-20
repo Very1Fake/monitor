@@ -34,6 +34,11 @@ pipe:
   success_hashes_time: 604800
   tick: 0.5
   wait: 10.0
+provider:
+  delay: 7.5
+  max_bad: 25
+  test_url: http://google.com/
+  timeout: 3.0
 queues:
   index_queue_put_wait: 8.0
   index_queue_size: 256

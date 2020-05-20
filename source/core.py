@@ -677,6 +677,7 @@ class Core:
             script_manager.event_handler.monitor_stopped()
 
             analytic.dump(2)  # Create stop report
+            api.provider.proxy_dump()  # Save proxies to ./proxy.yaml
 
             script_manager.unload_all()  # Unload scripts
             script_manager.del_()  # Delete all data about scripts (index, parsers, etc.)
