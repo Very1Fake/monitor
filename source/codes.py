@@ -65,6 +65,12 @@ _codes: Dict[int, str] = {
     20609: 'N script(s) indexed',
     20610: 'Skipping config (script not in whitelist)',
 
+    # EventHandler (207xx)
+    20701: 'Starting loop',
+    20702: 'Loop started',
+    20703: 'Stopping loop',
+    20704: 'Loop stopped',
+
     # Logger (208xx)
     20801: 'Log level changed',
     20802: 'Log mode changed',
@@ -108,6 +114,10 @@ _codes: Dict[int, str] = {
     30505: 'Script not indexed but still loaded',
     30506: 'Script already loaded',
     30507: 'Max errors for script reached, unloading',
+
+    # EventHandler (307xx)
+    30701: 'Loop already started',
+    30702: 'Loop already stopped',
 
     # Logger (308xx)
     30801: 'Meaningless level change (changing to the same value)',
@@ -159,6 +169,9 @@ _codes: Dict[int, str] = {
     40504: 'Can\'t reload script (script isn\'t loaded)',
     40505: 'Script cannot be reloaded (folder not found)',
     40506: 'Script cannot be reloaded (script not in index)',
+
+    # EventHandler (407xx)
+    40701: 'Event execution failed',
 
     # Logger (408xx)
     40801: 'Can\'t change level (possible values (0, 1, 2, 3, 4, 5))',

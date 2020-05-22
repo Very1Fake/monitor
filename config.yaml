@@ -3,20 +3,9 @@ analytics:
   datetime: true
   datetime_format: '%Y-%m-%d %H:%M:%S.%f'
   path: reports
-api:
-  priority_IInterval: 50
-  priority_IOnce: 10
-  priority_TInterval:
-  - 100
-  - 100
-  priority_TScheduled:
-  - 50
-  - 0
-  priority_TSmart:
-  - 10
-  - 0
-  priority_interval_default: 100
-  priority_target_default: 1001
+event_handler:
+  tick: 1.0
+  wait: 3.0
 index_worker:
   count: 5
   tick: 1.0
@@ -34,6 +23,20 @@ pipe:
   success_hashes_time: 604800
   tick: 0.5
   wait: 10.0
+priority:
+  IInterval: 50
+  IOnce: 10
+  TInterval:
+  - 100
+  - 100
+  TScheduled:
+  - 50
+  - 0
+  TSmart:
+  - 10
+  - 0
+  interval_default: 100
+  target_default: 1001
 provider:
   delay: 7.5
   max_bad: 25

@@ -41,13 +41,13 @@ class HashStorage:
     @classmethod
     def check_table(cls, name: str) -> None:
         with cls._lock, cls.__db as c:
-            c.executescript(f'create table if not exists {name} (time real, hash blob);'
-                            f'create unique index if not exists "{name}_uindex" on {name}(hash);')
+            c.executescript(f'CREATE TABLE IF NOT EXISTS {name} (time real, hash blob);'
+                            f'CREATE UNIQUE INDEX IF NOT EXISTS "{name}_uindex" ON {name}(hash);')
 
     def _clear(self) -> None:
         with self._lock, self.__db as c:
-            for i in c.execute('select name from sqlite_master where `type`="table"').fetchall():
-                c.execute(f'drop table `{i[0]}`;')
+            for i in c.execute('SELECT `name` FROM sqlite_master WHERE `type`="table"').fetchall():
+                c.execute(f'DROP TABLE `{i[0]}`;')
 
     def unload(self) -> None:
         with self._lock, self.__db as c:
@@ -87,7 +87,7 @@ class HashStorage:
         if isinstance(table, str):
             with self._lock, self.__db as c:
                 try:
-                    c.execute(f'drop table {table}')
+                    c.execute(f'DROP TABLE {table}')
                 except sqlite3.OperationalError:
                     pass
         else:
@@ -101,8 +101,8 @@ class HashStorage:
             time_ = time.time()
 
         with self._lock, self.__db as c:
-            for i in c.execute('select name from sqlite_master where `type`="table"').fetchall():
-                c.execute(f'delete from {i[0]} where `time`<=?', (time_,))
+            for i in c.execute('SELECT `name` FROM sqlite_master WHERE `type`="table"').fetchall():
+                c.execute(f'DELETE FROM {i[0]} WHERE `time`<=?', (time_,))
 
     def contains(self, hash_: Union[bytes, _blake2.blake2s], table: str = '') -> bool:
         if isinstance(hash_, _blake2.blake2s):
@@ -121,7 +121,7 @@ class HashStorage:
         with self._lock, self.__db as c:
             self.check_table(table)
 
-            if c.execute(f'select * from {table} where `hash`=?', (hash_,)).fetchone():
+            if c.execute(f'SELECT * FROM {table} WHERE `hash`=?', (hash_,)).fetchone():
                 return True
             else:
                 return False
@@ -150,7 +150,7 @@ class HashStorage:
             self.check_table(table)
 
             try:
-                c.execute(f'insert into {table} values (?, ?)', (time_, hash_))
+                c.execute(f'INSERT INTO {table} VALUES (?, ?)', (time_, hash_))
             except sqlite3.IntegrityError as e:
                 if str(e).startswith('UNIQUE'):
                     raise UniquenessError

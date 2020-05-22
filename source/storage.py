@@ -95,14 +95,14 @@ class Logger(NamedTuple):
     message_content: int = 1  # (0 - Only code, 1 - Code & Message, 2 - Code & Title & Message
 
 
-class API(NamedTuple):
-    priority_IOnce: int = 10
-    priority_IInterval: int = 50
-    priority_TSmart: list = [10, 0]
-    priority_TScheduled: list = [50, 0]
-    priority_TInterval: list = [100, 100]  # First value is base priority, second value is range (0 for static priority)
-    priority_interval_default: int = 100
-    priority_target_default: int = 1001
+class Priority(NamedTuple):
+    IOnce: int = 10
+    IInterval: int = 50
+    TSmart: list = [10, 0]
+    TScheduled: list = [50, 0]
+    TInterval: list = [100, 100]  # First value is base priority, second value is range (0 for static priority)
+    interval_default: int = 100
+    target_default: int = 1001
 
 
 class Provider(NamedTuple):
@@ -110,6 +110,11 @@ class Provider(NamedTuple):
     max_bad: int = 25
     timeout: float = 3.
     test_url: str = 'http://google.com/'
+
+
+class EventHandler(NamedTuple):
+    tick: float = 1.
+    wait: float = 3.
 
 
 categories: tuple = (
@@ -121,8 +126,9 @@ categories: tuple = (
     'index_worker',
     'queues',
     'logger',
-    'api',
-    'provider'
+    'priority',
+    'provider',
+    'event_handler'
 )
 
 # Global variables
@@ -134,20 +140,16 @@ worker: Worker = Worker()
 index_worker: IndexWorker = IndexWorker()
 queues: Queues = Queues()
 logger: Logger = Logger()
-api: API = API()
+priority: Priority = Priority()
 provider: Provider = Provider()
+event_handler: EventHandler = EventHandler()
 
 
 def snapshot() -> dict:
     snapshot_: dict = {}
     for k, v in globals().items():
-        if not k.startswith('__') and not k.startswith('_') and \
-                k not in ('categories', 'config_check', 'config_load', 'config_dump', 'snapshot', 'os', 'yaml') and \
-                not k[0].isupper():
-            if _is_namedtuple(v):
-                snapshot_[k] = v._asdict()
-            else:
-                snapshot_[k] = v
+        if k in categories:
+            snapshot_[k] = v._asdict()
     return snapshot_
 
 

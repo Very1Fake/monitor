@@ -1,7 +1,10 @@
 import importlib
 import os
+import queue
 import sys
 import threading
+import time
+import traceback
 from types import ModuleType
 from typing import Dict, Any, Tuple, List
 
@@ -262,15 +265,69 @@ class ScriptIndex:
 
 
 class EventHandler:  # TODO: unload protection
-    log: logger.Logger
+    _active: bool
+    _log: logger.Logger
+
     executors: Dict[str, api.EventsExecutor]
+    pool: queue.Queue
+    thread: threading.Thread
 
     def __init__(self):
-        self.log = logger.Logger('EventHandler')
+        self._active = False
+        self._log = logger.Logger('EH')
+
         self.executors = {}
+        self.pool = queue.Queue()
+        self.thread = threading.Thread(target=self.loop)
+
+    def loop(self):
+        while True:
+            start = time.time()
+
+            try:
+                task: Tuple[str, list] = self.pool.get_nowait()
+
+                for k, v in self.executors.items():
+                    try:
+                        getattr(v, task[0])(*task[1])
+                    except AttributeError:
+                        pass
+                    except Exception as e:
+                        if storage.main.production:
+                            self._log.error(codes.Code(40701, f'{k}: {e.__class__.__name__}: {str(e)}'))
+                        else:
+                            self._log.fatal_msg(codes.Code(40701, k), traceback.format_exc())
+            except queue.Empty:
+                if not self._active:
+                    break
+
+            delta = time.time() - start
+            time.sleep(storage.event_handler.tick - delta if storage.event_handler.tick - delta > 0 else 0)
+
+    def start(self):
+        self._log.info(codes.Code(20701))
+        if not self.thread.is_alive():
+            self._active = True
+            try:
+                self.thread.start()
+            except RuntimeError:
+                self.thread = threading.Thread(target=self.loop)
+                self.thread.start()
+            self._log.info(codes.Code(20702))
+        else:
+            self._log.warn(codes.Code(30701))
+
+    def stop(self):
+        self._log.info(codes.Code(20703))
+        if self.thread.is_alive():
+            self._active = False
+            self.thread.join(storage.event_handler.wait)
+            self._log.info(codes.Code(20704))
+        else:
+            self._log.warn(codes.Code(30702))
 
     def add(self, name: str, executor: api.EventsExecutor) -> bool:
-        self.executors[name] = executor(name, logger.Logger('EventsExecutor/' + name))
+        self.executors[name] = executor(name, logger.Logger('EE/' + name))
         return True
 
     def delete(self, name: str) -> bool:
@@ -278,36 +335,26 @@ class EventHandler:  # TODO: unload protection
             del self.executors[name]
         return True
 
-    def exec(self, event: str, args: tuple):
-        for i in self.executors.__iter__():
-            try:
-                getattr(self.executors[i], event)(*args)
-            except Exception as e:
-                if storage.main.production:
-                    self.log.error(f'{str(e)} while executing {event} with "{i}" executor')
-                else:
-                    self.log.fatal(e)
-
     def monitor_starting(self) -> None:
-        self.exec('e_monitor_starting', ())
+        self.pool.put(('e_monitor_starting', ()))
 
     def monitor_started(self) -> None:
-        self.exec('e_monitor_started', ())
+        self.pool.put(('e_monitor_started', ()))
 
     def monitor_stopping(self) -> None:
-        self.exec('e_monitor_stopping', ())
+        self.pool.put(('e_monitor_stopping', ()))
 
     def monitor_stopped(self) -> None:
-        self.exec('e_monitor_stopped', ())
+        self.pool.put(('e_monitor_stopped', ()))
 
     def alert(self, code: codes.Code, thread: str) -> None:
-        self.exec('e_alert', (code, thread))
+        self.pool.put(('e_alert', (code, thread)))
 
     def success_status(self, status: api.SSuccess) -> None:
-        self.exec('e_success_status', (status,))
+        self.pool.put(('e_success_status', (status,)))
 
     def fail_status(self, status: api.SFail) -> None:
-        self.exec('e_fail_status', (status,))
+        self.pool.put(('e_fail_status', (status,)))
 
 
 class ScriptManager:

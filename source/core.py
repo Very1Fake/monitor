@@ -115,22 +115,22 @@ class Resolver:
     @staticmethod
     def index_priority(index: api.IndexType) -> int:
         if isinstance(index, api.IOnce):
-            return storage.api.priority_IOnce
+            return storage.priority.IOnce
         elif isinstance(index, api.IInterval):
-            return storage.api.priority_IInterval
+            return storage.priority.IInterval
         else:
-            return storage.api.priority_interval_default
+            return storage.priority.interval_default
 
     @staticmethod
     def target_priority(target: api.TargetType) -> int:
         if isinstance(target, api.TSmart):
-            return storage.api.priority_TSmart[0] + target.reuse(storage.api.priority_TSmart[1])
+            return storage.priority.TSmart[0] + target.reuse(storage.priority.TSmart[1])
         elif isinstance(target, api.TScheduled):
-            return storage.api.priority_TScheduled[0] + target.reuse(storage.api.priority_TScheduled[1])
+            return storage.priority.TScheduled[0] + target.reuse(storage.priority.TScheduled[1])
         elif isinstance(target, api.TInterval):
-            return storage.api.priority_TInterval[0] + target.reuse(storage.api.priority_TInterval[1])
+            return storage.priority.TInterval[0] + target.reuse(storage.priority.TInterval[1])
         else:
-            return storage.api.priority_target_default
+            return storage.priority.target_default
 
     def get_targets(self) -> List[api.TargetType]:
         time_: float = time.time()
@@ -335,7 +335,7 @@ class Pipe(ThreadClass):
                 self.log.info(codes.Code(20005))
                 break
             delta: float = time.time() - start
-            time.sleep(storage.pipe.tick - delta if storage.pipe.tick - delta >= 0 else 0)
+            time.sleep(storage.pipe.tick - delta if storage.pipe.tick - delta > 0 else 0)
 
 
 class Worker(ThreadClass):
@@ -379,7 +379,7 @@ class Worker(ThreadClass):
                 break
             delta: float = time.time() - start
             self.speed = 0 if self.idle else round(1 / delta, 3)
-            time.sleep(storage.worker.tick - delta if storage.worker.tick - delta >= 0 else 0)
+            time.sleep(storage.worker.tick - delta if storage.worker.tick - delta > 0 else 0)
 
 
 class IndexWorker(ThreadClass):
@@ -426,7 +426,7 @@ class IndexWorker(ThreadClass):
                 break
             delta: float = time.time() - start
             self.speed = 0 if self.idle else round(1 / delta, 3)
-            time.sleep(storage.index_worker.tick - delta if storage.index_worker.tick - delta >= 0 else 0)
+            time.sleep(storage.index_worker.tick - delta if storage.index_worker.tick - delta > 0 else 0)
 
 
 class ThreadManager(ThreadClass):
@@ -600,7 +600,7 @@ class ThreadManager(ThreadClass):
                     break
                 delta: float = time.time() - start
                 time.sleep(storage.thread_manager.tick - delta if
-                           storage.thread_manager.tick - delta >= 0 else 0)
+                           storage.thread_manager.tick - delta > 0 else 0)
             except Exception as e:
                 self.log.fatal_msg(codes.Code(50201, f'{e.__class__.__name__}: {str(e)}'), traceback.format_exc())
                 self.stop_threads()
@@ -627,9 +627,10 @@ class Core:
         self.state = 1
 
         # Staring
+        hash_storage.load()  # Load success hashes from cache
         storage.config_load()  # Load ./config.yaml
         script_manager.index.config_load()  # Load ./scripts/config.yaml
-        hash_storage.load()  # Load success hashes from cache
+        script_manager.event_handler.start()  # Start event loop
 
         if storage.main.production:  # Notify about production mode
             self.log.info(codes.Code(20101))
@@ -670,17 +671,18 @@ class Core:
 
             self.thread_manager.join(self.thread_manager.close())  # Stop pipeline and wait
 
-            self.log.info(codes.Code(20104))
-            hash_storage.unload()  # Dump success hashes
-            self.log.info(codes.Code(20105))
+            api.provider.proxy_dump()  # Save proxies to ./proxy.yaml
+            analytic.dump(2)  # Create stop report
 
             script_manager.event_handler.monitor_stopped()
 
-            analytic.dump(2)  # Create stop report
-            api.provider.proxy_dump()  # Save proxies to ./proxy.yaml
-
+            script_manager.event_handler.stop()  # Stop event loop
             script_manager.unload_all()  # Unload scripts
             script_manager.del_()  # Delete all data about scripts (index, parsers, etc.)
+
+            self.log.info(codes.Code(20104))
+            hash_storage.unload()  # Dump success hashes
+            self.log.info(codes.Code(20105))
 
             self.log.info(codes.Code(20106))
 

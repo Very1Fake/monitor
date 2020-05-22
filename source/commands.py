@@ -24,6 +24,7 @@ class Commands:
         core.server.commands.add_(self.config_categories)
         core.server.commands.add_(self.config_dump)
         core.server.commands.add_(self.config_load)
+        core.server.commands.add_(self.config_get)
         core.server.commands.add_(self.config_set)
         core.server.commands.add_(self.hash_storage_dump)
         core.server.commands.add_(self.hash_storage_backup)
@@ -70,6 +71,7 @@ class Commands:
         core.server.commands.alias('c-cat', 'config_categories')
         core.server.commands.alias('c-dump', 'config_dump')
         core.server.commands.alias('c-load', 'config_load')
+        core.server.commands.alias('c-get', 'config_get')
         core.server.commands.alias('c-set', 'config_set')
         core.server.commands.alias('hs-dump', 'hash_storage_dump')
         core.server.commands.alias('hs-backup', 'hash_storage_backup')
@@ -141,6 +143,22 @@ class Commands:
         storage.config_load()
         self.log.info(codes.Code(21102, f'{peer.name}: {inspect.stack()[0][3]}'))
         return True
+
+    def config_get(self, peer: Peer, namespace: str, key: str) -> Any:
+        self.log.info(codes.Code(21101, f'{peer.name}: {inspect.stack()[0][3]}'))
+        if not isinstance(namespace, str):
+            raise TypeError('namespace must be str')
+        elif not isinstance(key, str):
+            raise TypeError('key must be str')
+
+        if namespace in storage.categories:
+            if hasattr(getattr(storage, namespace), key):
+                self.log.info(codes.Code(21102, f'{peer.name}: {inspect.stack()[0][3]}'))
+                return getattr(getattr(storage, namespace), key)
+            else:
+                raise IndexError(f'"{key}" not found in "{namespace}"')
+        else:
+            raise IndexError(f'Namespace "{namespace}" not found')
 
     def config_set(self, peer: Peer, namespace: str, key: str, value: Any) -> bool:
         self.log.info(codes.Code(21101, f'{peer.name}: {inspect.stack()[0][3]}'))
