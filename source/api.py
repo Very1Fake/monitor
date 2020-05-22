@@ -11,6 +11,7 @@ import requests
 import yaml
 
 from . import storage
+from . import cache
 from . import codes
 from . import logger
 
@@ -191,9 +192,9 @@ class SubProvider(ProviderCore):
             return func.get(*args, **kwargs)
         except Exception as e:
             if isinstance(e, requests.ConnectionError):
-                self._log.warn(codes.Code(31201), self._script)
+                self._log.warn(codes.Code(31301), self._script)
             elif isinstance(e, requests.Timeout):
-                self._log.warn(codes.Code(31202, str(kwargs['timeout'])), self._script)
+                self._log.warn(codes.Code(31302, str(kwargs['timeout'])), self._script)
 
             raise SubProviderError
 
@@ -440,10 +441,16 @@ class SFail(Status):
 
 
 class Parser(abc.ABC):  # Class to implement parsers
-    def __init__(self, name: str, log: logger.Logger, provider_: SubProvider):
+    name: str
+    log: logger.Logger
+    provider: SubProvider
+    storage: cache.HashStorage
+
+    def __init__(self, name: str, log: logger.Logger, provider_: SubProvider, storage_: cache.HashStorage):
         self.name = name
         self.log = log
         self.provider = provider_
+        self.storage = storage_
 
     @abc.abstractmethod
     def index(self) -> IndexType:

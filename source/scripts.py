@@ -10,6 +10,7 @@ from checksumdir import dirhash
 from packaging.version import Version, InvalidVersion
 
 from . import api
+from . import cache
 from . import codes
 from . import logger
 from . import storage
@@ -347,7 +348,8 @@ class ScriptManager:
                 self.parsers[script['name']] = getattr(module, 'Parser')(
                     script['name'],
                     logger.Logger('Parser/' + script['name']),
-                    api.SubProvider(script['name'])
+                    api.SubProvider(script['name']),
+                    cache.HashStorage('sh_' + script['name'])
                 )
             else:
                 self.parsers[script['name']] = getattr(module, 'Parser')

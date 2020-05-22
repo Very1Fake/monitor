@@ -146,7 +146,7 @@ class Resolver:
 
     def insert_target(self, target: api.TargetType) -> None:
         with self._insert_target_lock:
-            if target.hash() not in success_hashes.values():
+            if target.hash() not in hash_storage:
                 try:
                     if isinstance(target, api.TSmart):
                         time_ = library.smart_extractor(
@@ -171,7 +171,7 @@ class Resolver:
     def execute_target(self) -> Tuple[int, str]:  # TODO: Combine in one function for new API
         try:
             target: api.TargetType = target_queue.get_nowait().content
-            if target.hash() in success_hashes.values():
+            if target.hash() in hash_storage:
                 raise ResolverError
         except (queue.Empty, ResolverError):
             return 0, ''
@@ -195,7 +195,7 @@ class Resolver:
             self.insert_target(result.target)
             return 3, target.script
         elif isinstance(result, api.SSuccess):
-            success_hashes[time.time() + storage.pipe.success_hashes_time] = target.hash()
+            hash_storage.add(target.hash(), time.time() + storage.pipe.success_hashes_time)
             script_manager.event_handler.success_status(result)
             self._log.info(codes.Code(20901, str(result)), threading.current_thread().name)
             return 4, target.script
@@ -281,7 +281,7 @@ class Pipe(ThreadClass):
             start: float = time.time()
             if self.state == 1:  # Active state
                 try:
-                    del success_hashes[:time.time()]  # Cleanup expired hashes
+                    hash_storage.cleanup()  # Cleanup expired hashes
 
                     if different := self._compare_parsers(
                             self.parsers_hashes, script_manager.hash()):  # Check for scripts (loaded/unloaded)
@@ -629,7 +629,7 @@ class Core:
         # Staring
         storage.config_load()  # Load ./config.yaml
         script_manager.index.config_load()  # Load ./scripts/config.yaml
-        success_hashes.update(cache.load_success_hashes())  # Load success hashes from cache
+        hash_storage.load()  # Load success hashes from cache
 
         if storage.main.production:  # Notify about production mode
             self.log.info(codes.Code(20101))
@@ -671,7 +671,7 @@ class Core:
             self.thread_manager.join(self.thread_manager.close())  # Stop pipeline and wait
 
             self.log.info(codes.Code(20104))
-            cache.dump_success_hashes(success_hashes)  # Dump success hashes
+            hash_storage.unload()  # Dump success hashes
             self.log.info(codes.Code(20105))
 
             script_manager.event_handler.monitor_stopped()
@@ -687,7 +687,7 @@ class Core:
 
 if __name__ == 'source.core':
     script_manager: scripts.ScriptManager = scripts.ScriptManager()
-    success_hashes: library.Schedule = library.Schedule()
+    hash_storage: cache.HashStorage = cache.HashStorage('h_success')
 
     analytic: analytics.Analytics = analytics.Analytics()
     index_queue: queue.PriorityQueue = queue.PriorityQueue(storage.queues.index_queue_size)

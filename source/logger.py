@@ -57,7 +57,7 @@ class Logger:
             except (NameError, AttributeError):
                 if not os.path.isdir(storage.main.logs_path):
                     os.makedirs(storage.main.logs_path)
-                file = open(f'{storage.main.logs_path}/{lib.get_time(storage.logger.utc_time)}.log', 'w+')
+                file = open(f'{storage.main.logs_path}/{lib.get_time(storage.logger.utc_time, True)}.log', 'w+')
             finally:
                 file.write(
                     f"[{lib.get_time(storage.logger.utc_time)}] [{self.types[type_][0]}] "

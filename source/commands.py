@@ -25,6 +25,8 @@ class Commands:
         core.server.commands.add_(self.config_dump)
         core.server.commands.add_(self.config_load)
         core.server.commands.add_(self.config_set)
+        core.server.commands.add_(self.hash_storage_dump)
+        core.server.commands.add_(self.hash_storage_backup)
         core.server.commands.add_(self.log_file_reset)
         core.server.commands.add_(self.proxy)
         core.server.commands.add_(self.proxies)
@@ -69,6 +71,8 @@ class Commands:
         core.server.commands.alias('c-dump', 'config_dump')
         core.server.commands.alias('c-load', 'config_load')
         core.server.commands.alias('c-set', 'config_set')
+        core.server.commands.alias('hs-dump', 'hash_storage_dump')
+        core.server.commands.alias('hs-backup', 'hash_storage_backup')
         core.server.commands.alias('l-file-reset', 'log_file_reset')
         core.server.commands.alias('p-dump', 'proxy_dump')
         core.server.commands.alias('p-load', 'proxy_load')
@@ -158,6 +162,18 @@ class Commands:
                 raise IndexError(f'"{key}" not found in "{namespace}"')
         else:
             raise IndexError(f'Namespace "{namespace}" not found')
+
+    def hash_storage_dump(self, peer: Peer) -> bool:
+        self.log.info(codes.Code(21101,  f'{peer.name}: {inspect.stack()[0][3]}'))
+        core.hash_storage.dump()
+        self.log.info(codes.Code(21102,  f'{peer.name}: {inspect.stack()[0][3]}'))
+        return True
+
+    def hash_storage_backup(self, peer: Peer) -> bool:
+        self.log.info(codes.Code(21101,  f'{peer.name}: {inspect.stack()[0][3]}'))
+        core.hash_storage.backup()
+        self.log.info(codes.Code(21102,  f'{peer.name}: {inspect.stack()[0][3]}'))
+        return True
 
     def log_file_reset(self, peer: Peer) -> bool:
         self.log.info(codes.Code(21101, f'{peer.name}: {inspect.stack()[0][3]}'))

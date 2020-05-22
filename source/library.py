@@ -72,12 +72,12 @@ class UniqueSchedule(Schedule):
 time_format: str = "%Y-%m-%d %H:%M:%S"
 
 
-def get_time(global_: bool = True) -> str:
+def get_time(global_: bool = True, name: bool = False) -> str:
     if global_:
         time_ = datetime.utcnow()
     else:
         time_ = datetime.now()
-    return datetime.strftime(time_, time_format)
+    return datetime.strftime(time_, time_format.replace(' ', '_') if name else time_format)
 
 
 def smart_gen(time_: float, length: int, scatter: int = 1) -> Iterator[float]:
