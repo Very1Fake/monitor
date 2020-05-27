@@ -7,7 +7,7 @@ from typing import Union
 from termcolor import colored
 
 from . import codes
-from . import library as lib
+from . import tools
 from . import storage
 
 print_lock: threading.Lock = threading.Lock()
@@ -44,7 +44,7 @@ class Logger:
     def print(self, type_: int, msg: Union[str, codes.Code], parent: str = '') -> None:
         with print_lock:
             print(
-                f"[{lib.get_time(storage.logger.utc_time)}] [{colored(*self.types[type_])}] "
+                f"[{tools.get_time(storage.logger.utc_time)}] [{colored(*self.types[type_])}] "
                 f"[{f'{parent}>' if parent else ''}{self.name}]: {self.format_msg(msg)}"
             )
 
@@ -57,10 +57,10 @@ class Logger:
             except (NameError, AttributeError):
                 if not os.path.isdir(storage.main.logs_path):
                     os.makedirs(storage.main.logs_path)
-                file = open(f'{storage.main.logs_path}/{lib.get_time(storage.logger.utc_time, True)}.log', 'w+')
+                file = open(f'{storage.main.logs_path}/{tools.get_time(storage.logger.utc_time, True)}.log', 'w+')
             finally:
                 file.write(
-                    f"[{lib.get_time(storage.logger.utc_time)}] [{self.types[type_][0]}] "
+                    f"[{tools.get_time(storage.logger.utc_time)}] [{self.types[type_][0]}] "
                     f"[{f'{parent}>' if parent else ''}{self.name}]: {self.format_msg(msg)}\n"
                 )
                 file.flush()
@@ -114,8 +114,8 @@ class Logger:
         if storage.logger.mode == 1 or storage.logger.mode == 3:
             with print_lock:
                 print(colored(
-                    f"[{lib.get_time(storage.logger.utc_time)}] [FATAL] [{f'{parent}>' if parent else ''}{self.name}]: "
-                    f"{self.format_msg(msg)}",
+                    f'[{tools.get_time(storage.logger.utc_time)}] [FATAL] '
+                    f'[{f"{parent}>" if parent else ""}{self.name}]: {self.format_msg(msg)}',
                     'red',
                     attrs=['reverse']
                 ) + f"\n{'=' * 32}\n{traceback_}\n{'=' * 32}" if traceback_ else '')
@@ -128,7 +128,8 @@ class Logger:
         if storage.logger.mode == 1 or storage.logger.mode == 3:
             with print_lock:
                 print(colored(
-                    f"[{lib.get_time(storage.logger.utc_time)}] [FATAL] [{f'{parent}>' if parent else ''}{self.name}]: "
+                    f'[{tools.get_time(storage.logger.utc_time)}] [FATAL] '
+                    f'[{f"{parent}>" if parent else ""}{self.name}]: '
                     f"{e.__class__.__name__}: {str(e)}",
                     'red',
                     attrs=['reverse']

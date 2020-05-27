@@ -48,7 +48,12 @@ def config_dump() -> None:
 class Main(NamedTuple):
     production: bool = False  # If True monitor will try to avoid fatal errors as possible
     logs_path: str = 'logs'
-    cache_path: str = 'cache'
+
+
+class Cache(NamedTuple):
+    path: str = 'cache'
+    item_time: int = 1209600
+    target_time: int = 604800  # How long save hashes of success & failed targets
 
 
 class Analytics(NamedTuple):
@@ -66,7 +71,6 @@ class ThreadManager(NamedTuple):
 class Pipe(NamedTuple):
     tick: float = .5  # Delta time for queue manage (in seconds)
     wait: float = 10.  # Timeout to join() when turning off monitor (in seconds)
-    success_hashes_time: int = 604800  # How long save hashes of success targets
 
 
 class Worker(NamedTuple):
@@ -75,15 +79,15 @@ class Worker(NamedTuple):
     wait: float = 5.
 
 
-class IndexWorker(NamedTuple):
+class CatalogWorker(NamedTuple):
     count: int = 5
     tick: float = 1.
     wait: int = 7
 
 
 class Queues(NamedTuple):
-    index_queue_size: int = 256  # Size for index_queue (will be waiting if full)
-    index_queue_put_wait: float = 8.
+    catalog_queue_size: int = 256  # Size for catalog_queue (will be waiting if full)
+    catalog_queue_put_wait: float = 8.
     target_queue_size: int = 512  # Size for target_queue (will be waiting if full)
     target_queue_put_wait: float = 8.
 
@@ -96,12 +100,16 @@ class Logger(NamedTuple):
 
 
 class Priority(NamedTuple):
-    IOnce: int = 10
-    IInterval: int = 50
+    CSmart: int = 10
+    CScheduled: int = 50
+    CInterval: int = 100
     TSmart: list = [10, 0]
     TScheduled: list = [50, 0]
     TInterval: list = [100, 100]  # First value is base priority, second value is range (0 for static priority)
-    interval_default: int = 100
+    RTSmart: list = [10, 0]
+    RTScheduled: list = [50, 0]
+    RTInterval: list = [100, 100]  # First value is base priority, second value is range (0 for static priority)
+    catalog_default: int = 100
     target_default: int = 1001
 
 
@@ -113,17 +121,18 @@ class Provider(NamedTuple):
 
 
 class EventHandler(NamedTuple):
-    tick: float = 1.
+    tick: float = .5
     wait: float = 3.
 
 
 categories: tuple = (
     'main',
+    'cache',
     'analytics',
     'thread_manager',
     'pipe',
     'worker',
-    'index_worker',
+    'catalog_worker',
     'queues',
     'logger',
     'priority',
@@ -133,11 +142,12 @@ categories: tuple = (
 
 # Global variables
 main: Main = Main()
+cache: Cache = Cache()
 analytics: Analytics = Analytics()
 thread_manager: ThreadManager = ThreadManager()
 pipe: Pipe = Pipe()
 worker: Worker = Worker()
-index_worker: IndexWorker = IndexWorker()
+catalog_worker: CatalogWorker = CatalogWorker()
 queues: Queues = Queues()
 logger: Logger = Logger()
 priority: Priority = Priority()

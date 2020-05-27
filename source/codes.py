@@ -9,8 +9,10 @@ _codes: Dict[int, str] = {
     10301: 'Reindexing parser',
 
     # Resolver (109xx)
-    10901: 'Executing target',
-    10902: 'Executing catalog',
+    10901: 'Executing catalog',
+    10902: 'Executing target',
+    10903: 'Catalog executed',
+    10904: 'Target executed',
 
     # Information (2xxxx)
     # System (200xx)
@@ -34,8 +36,8 @@ _codes: Dict[int, str] = {
     20202: 'Pipe started',
     20203: 'Worker initialized',
     20204: 'Worker started',
-    20205: 'IndexWorker initialized',
-    20206: 'IndexWorker started',
+    20205: 'CatalogWorker initialized',
+    20206: 'CatalogWorker started',
 
     # Pipe (203xx)
     20301: 'Reindexing parsers started',
@@ -98,13 +100,13 @@ _codes: Dict[int, str] = {
     # ThreadManager (302xx)
     30201: 'Pipe was stopped',
     30202: 'Worker was stopped',
-    30203: 'IndexWorker was stopped',
+    30203: 'CatalogWorker was stopped',
     30204: 'Lock forced released',
 
     # Pipe (303xx)
     30301: 'Parser reindexing failed',
-    30302: 'Target lost in pipeline',
-    30303: 'Catalog lost in pipeline',
+    30302: 'Catalog lost while sending (queue full)',
+    30303: 'Target lost while sending (queue full)',
 
     # ScriptManager (305xx)
     30501: 'Module not loaded',
@@ -125,13 +127,16 @@ _codes: Dict[int, str] = {
     30803: 'Meaningless time change (changing to the same value)',
 
     # Resolver (309xx)
-    30901: 'Target lost while retrieving (script not loaded)',
-    30902: 'Target lost while executing (script not loaded)',
-    30903: 'Target failed',
-    30904: 'Unknown status received while executing target',
-    30905: 'Catalog lost while executing (script not loaded)',
-    30906: 'Wrong target list received while updating catalog',
-    30907: 'Target lost while inserting in schedule',
+    30901: 'Catalog lost while retrieving (script not loaded)',
+    30902: 'Catalog lost while retrieving (script has no Parser)',
+    30903: 'Target lost while retrieving (script not loaded)',
+    30904: 'Target lost while retrieving (script has no Parser)',
+    30905: 'Catalog lost while executing (script unloaded)',
+    30906: 'Catalog lost while executing (script has no parser)',
+    30907: 'Catalog lost while executing (bad result)',
+    30908: 'Target lost while executing (script unloaded)',
+    30909: 'Target lost while executing (script has no parser)',
+    30910: 'Target lost while executing (bad result)',
 
     # Provider (312xx)
     31201: 'Proxy added',
@@ -149,13 +154,10 @@ _codes: Dict[int, str] = {
     # ThreadManager (402xx)
     40201: 'Pipe was unexpectedly stopped',
     40202: 'Worker was unexpectedly stopped',
-    40203: 'IndexWorker was unexpectedly stopped',
+    40203: 'CatalogWorker was unexpectedly stopped',
 
     # Pipe (403xx)
-    40301: 'Unknown index',
-    40302: 'Wrong target list received from script',
-    40303: 'Parser execution failed',
-    40304: 'Target lost in pipeline (script unloaded)',
+    40301: 'Wrong catalog received from script',
 
     # Worker (404xx)
     40401: 'Unknown status received while executing',
@@ -180,8 +182,8 @@ _codes: Dict[int, str] = {
     # Resolver (409xx)
     40901: 'Unknown index type (while inserting)',
     40902: 'Unknown target type (while inserting)',
-    40903: 'Target execution failed',
-    40904: 'Catalog execution failed',
+    40903: 'Catalog execution failed',
+    40904: 'Target execution failed',
 
     # Provider (412xx)
     41201: 'Bad proxy',
@@ -203,7 +205,7 @@ _codes: Dict[int, str] = {
     # Worker (504xx)
     50401: 'Unexpectedly has turned off',
 
-    # IndexWorker (510xx)
+    # CatalogWorker (510xx)
     51001: 'Unexpectedly has turned off'
 }
 

@@ -3,7 +3,7 @@ import random
 import threading
 import time
 import traceback
-from typing import Tuple, Dict, Type, List
+from typing import Tuple, Dict, Type, List, Union
 
 import uctp
 import yaml
@@ -11,13 +11,14 @@ from Crypto.PublicKey import RSA
 
 from . import analytics
 from . import api
-from . import cache
 from . import codes
 from . import commands
-from . import library
 from . import logger
 from . import scripts
 from . import storage
+from . import tools
+from .library import PrioritizedItem, UniqueSchedule, Provider
+from .cache import HashStorage
 
 
 # TODO: throw() for state setters
@@ -47,7 +48,7 @@ class WorkerError(Exception):
     pass
 
 
-class IndexWorkerError(Exception):
+class CatalogWorkerError(Exception):
     pass
 
 
@@ -57,9 +58,8 @@ class StateError(Exception):
 
 class ThreadClass(threading.Thread):
     _exception: Type[Exception]
+    _log: logger.Logger
     _state: int
-
-    log: logger.Logger
 
     def __init__(self, name: str, exception: Type[Exception]):
         if not isinstance(name, str):
@@ -67,10 +67,9 @@ class ThreadClass(threading.Thread):
 
         super().__init__(name=name, daemon=True)
 
-        self._state = 0
         self._exception = exception
-
-        self.log = logger.Logger(name)
+        self._log = logger.Logger(name)
+        self._state = 0
 
     @property
     def state(self) -> int:
@@ -93,168 +92,275 @@ class ThreadClass(threading.Thread):
     def throw(self, code: codes.Code) -> None:
         script_manager.event_handler.alert(code, self.name)
         if not storage.main.production:
-            self.log.fatal(self._exception(code))
+            self._log.fatal(self._exception(code))
 
 
 class Resolver:
-    _log: logger.Logger
-    _insert_indices_lock: threading.Lock
-    _insert_target_lock: threading.Lock
+    _log: logger.Logger = logger.Logger('R')
+    _catalog_lock: threading.RLock = threading.RLock()
+    _target_lock: threading.RLock = threading.RLock()
 
-    indices: library.UniqueSchedule
-    targets: library.UniqueSchedule
+    catalog_queue: queue.PriorityQueue = queue.PriorityQueue(storage.queues.catalog_queue_size)
+    target_queue: queue.PriorityQueue = queue.PriorityQueue(storage.queues.target_queue_size)
 
-    def __init__(self):
-        self._log = logger.Logger('R')
-        self._insert_indices_lock = threading.Lock()
-        self._insert_target_lock = threading.Lock()
-
-        self.indices = library.UniqueSchedule()
-        self.targets = library.UniqueSchedule()
+    catalogs: UniqueSchedule = UniqueSchedule()
+    targets: UniqueSchedule = UniqueSchedule()
 
     @staticmethod
-    def index_priority(index: api.IndexType) -> int:
-        if isinstance(index, api.IOnce):
-            return storage.priority.IOnce
-        elif isinstance(index, api.IInterval):
-            return storage.priority.IInterval
+    def catalog_priority(catalog: api.CatalogType) -> int:
+        if isinstance(catalog, api.CSmart):
+            return storage.priority.CSmart
+        elif isinstance(catalog, api.CScheduled):
+            return storage.priority.CScheduled
+        elif isinstance(catalog, api.CInterval):
+            return storage.priority.CInterval
         else:
-            return storage.priority.interval_default
+            return storage.priority.catalog_default
 
     @staticmethod
-    def target_priority(target: api.TargetType) -> int:
+    def target_priority(target: Union[api.TargetType, api.RestockTargetType]) -> int:
         if isinstance(target, api.TSmart):
             return storage.priority.TSmart[0] + target.reuse(storage.priority.TSmart[1])
         elif isinstance(target, api.TScheduled):
             return storage.priority.TScheduled[0] + target.reuse(storage.priority.TScheduled[1])
         elif isinstance(target, api.TInterval):
             return storage.priority.TInterval[0] + target.reuse(storage.priority.TInterval[1])
+        elif isinstance(target, api.RTSmart):
+            return storage.priority.RTSmart[0] + target.reuse(storage.priority.RTSmart[1])
+        elif isinstance(target, api.RTScheduled):
+            return storage.priority.RTScheduled[0] + target.reuse(storage.priority.RTScheduled[1])
+        elif isinstance(target, api.RTInterval):
+            return storage.priority.RTInterval[0] + target.reuse(storage.priority.RTInterval[1])
         else:
             return storage.priority.target_default
 
-    def get_targets(self) -> List[api.TargetType]:
-        time_: float = time.time()
-        targets: list = []
-        if any(self.targets[:time_]):
-            for k, v in self.targets[:time_]:
-                if v.script in script_manager.scripts and v.script in script_manager.parsers:
-                    targets.append(v)
+    @classmethod
+    def insert_catalog(cls, catalog: api.CatalogType, force: bool = False) -> None:
+        with cls._catalog_lock:
+            try:
+                if issubclass(type(catalog), api.Catalog):
+                    if force:
+                        cls.catalogs[time.time()] = catalog
+                    else:
+                        if isinstance(catalog, api.CSmart):
+                            time_ = tools.smart_extractor(
+                                tools.smart_gen(catalog.timestamp, catalog.length, catalog.scatter),
+                                time.time()
+                            )
+                            if time_:  # TODO: Fix here (expired must be checked once)
+                                cls.catalogs[time_] = catalog
+                            else:
+                                cls._log.warn(f'Smart catalog expired: {catalog}')
+                        elif isinstance(catalog, api.CScheduled):
+                            cls.catalogs[catalog.timestamp] = catalog
+                        elif isinstance(catalog, api.CInterval):
+                            cls.catalogs[time.time() + catalog.interval] = catalog
                 else:
-                    self._log.warn(codes.Code(30901, v), threading.current_thread().name)
-            del self.targets[:time_]
-        return targets
+                    if storage.main.production:
+                        cls._log.error(codes.Code(40901, catalog), threading.current_thread().name)
+                    else:
+                        cls._log.fatal(CollectorError(codes.Code(40901, catalog)),
+                                       parent=threading.current_thread().name)
+            except IndexError:
+                cls._log.test(f'Inserting non-unique catalog')
 
-    def insert_target(self, target: api.TargetType) -> None:
-        with self._insert_target_lock:
-            if target.hash() not in hash_storage:
+    @classmethod
+    def insert_target(cls, target: api.TargetType) -> None:
+        with cls._target_lock:
+            if HashStorage.check_target(target.hash()):
                 try:
                     if isinstance(target, api.TSmart):
-                        time_ = library.smart_extractor(
-                            library.smart_gen(target.timestamp, target.length, target.scatter),
+                        time_ = tools.smart_extractor(
+                            tools.smart_gen(target.timestamp, target.length, target.scatter),
                             time.time()
                         )
                         if time_:  # TODO: Fix here (expired must be checked once)
-                            self.targets[time_] = target
+                            cls.targets[time_] = target
                         else:
-                            self._log.warn(f'Smart target expired: {target}')
+                            cls._log.warn(f'Smart target expired: {target}')
                     elif isinstance(target, api.TScheduled):
-                        self.targets[target.timestamp] = target
+                        cls.targets[target.timestamp] = target
                     elif isinstance(target, api.TInterval):
-                        self.targets[time.time() + target.interval] = target
+                        cls.targets[time.time() + target.interval] = target
                     else:
-                        self._log.error(codes.Code(40902, target), threading.current_thread().name)
-                except ValueError:
-                    self._log.warn(codes.Code(30907, target), threading.current_thread().name)
+                        cls._log.error(codes.Code(40902, target), threading.current_thread().name)
                 except IndexError:
-                    self._log.test(f'Inserting non-unique target')
+                    cls._log.test(f'Inserting non-unique target')
 
-    def execute_target(self) -> Tuple[int, str]:  # TODO: Combine in one function for new API
+    @classmethod
+    def remove_catalog(cls, script: str):
+        if not isinstance(script, str):
+            raise TypeError('script must be str')
+
+        with cls._catalog_lock, cls.catalog_queue.mutex:
+            schedule_id = -1
+            queue_id = -1
+
+            for k, v in cls.catalogs.items():
+                if v.script == script:
+                    schedule_id = k
+
+            for i, v in enumerate(cls.catalog_queue.queue):
+                if v.content.script == script:
+                    queue_id = i
+
+            cls.catalogs.pop(schedule_id) if schedule_id > -1 else ...
+            cls.catalog_queue.queue.pop(queue_id) if queue_id > -1 else ...
+
+    @classmethod
+    def remove_targets(cls, script: str):  # TODO: Check from core
+        if not isinstance(script, str):
+            raise TypeError('script must be str')
+
+        with cls._target_lock, cls.target_queue.mutex:
+            schedule_ids = []
+            queue_ids = []
+
+            for k, v in cls.targets.items():
+                if v.script == script:
+                    schedule_ids.append(k)
+
+            for i, v in enumerate(cls.target_queue.queue):
+                if v.content.script == script:
+                    queue_ids.append(i)
+
+            for i in schedule_ids:
+                cls.targets.pop(i)
+
+            for i in queue_ids:
+                cls.target_queue.queue.pop(i)
+
+    @classmethod
+    def get_catalogs(cls) -> List[api.CatalogType]:
+        with cls._catalog_lock:
+            time_ = time.time()
+            catalogs = []
+            if any(cls.catalogs[:time_]):
+                for k, v in cls.catalogs[:time_]:
+                    if v.script in script_manager.scripts and v.script in script_manager.parsers:
+                        catalogs.append(v)
+                    elif v.script not in script_manager.scripts:
+                        cls._log.warn(codes.Code(30901, v), threading.current_thread().name)
+                    elif v.script not in script_manager.parsers:
+                        cls._log.warn(codes.Code(30902, v), threading.current_thread().name)
+                del cls.catalogs[:time_]
+            return catalogs
+
+    @classmethod
+    def get_targets(cls) -> List[Union[api.TargetType, api.RestockTargetType]]:
+        with cls._target_lock:
+            time_ = time.time()
+            targets = []
+            if any(cls.targets[:time_]):
+                for k, v in cls.targets[:time_]:
+                    if v.script in script_manager.scripts and v.script in script_manager.parsers:
+                        targets.append(v)
+                    elif v.script not in script_manager.scripts:
+                        cls._log.warn(codes.Code(30903, v), threading.current_thread().name)
+                    elif v.script not in script_manager.parsers:
+                        cls._log.warn(codes.Code(30904, v), threading.current_thread().name)
+                del cls.targets[:time_]
+            return targets
+
+    @classmethod
+    def execute(cls, mode: int = 0) -> Tuple[int, str]:
         try:
-            target: api.TargetType = target_queue.get_nowait().content
-            if target.hash() in hash_storage:
-                raise ResolverError
-        except (queue.Empty, ResolverError):
-            return 0, ''
-
-        self._log.debug(codes.Code(10901, str(target)), threading.current_thread().name)
-
-        try:
-            result = script_manager.execute_parser(target.script, 'execute', (target,))
-        except scripts.ScriptManagerError:
-            self._log.warn(codes.Code(30902, str(target)), threading.current_thread().name)
-            return 1, target.script
-        except Exception as e:
-            self._log.fatal_msg(
-                codes.Code(40903, f'{target}: {e.__class__.__name__}: {str(e)}'),
-                traceback.format_exc(),
-                threading.current_thread().name
-            )
-            return 2, target.script
-
-        if isinstance(result, api.SWaiting):
-            self.insert_target(result.target)
-            return 3, target.script
-        elif isinstance(result, api.SSuccess):
-            hash_storage.add(target.hash(), time.time() + storage.pipe.success_hashes_time)
-            script_manager.event_handler.success_status(result)
-            self._log.info(codes.Code(20901, str(result)), threading.current_thread().name)
-            return 4, target.script
-        elif isinstance(result, api.SFail):
-            script_manager.event_handler.fail_status(result)
-            self._log.warn(codes.Code(30903, target), threading.current_thread().name)
-            return 5, target.script
-        else:
-            self._log.warn(codes.Code(30904, target), threading.current_thread().name)
-            return 6, target.script
-
-    def insert_index(self, index: api.IndexType, force: bool = False) -> None:  # TODO: Make `now` argument here
-        with self._insert_indices_lock:
-            try:
-                if isinstance(index, (api.IOnce, api.IInterval)):
-                    if force:
-                        self.indices[time.time()] = index
-                    else:
-                        if isinstance(index, api.IInterval):
-                            self.indices[time.time() + index.interval] = index
-                else:
-                    if storage.main.production:
-                        self._log.error(codes.Code(40901, index), threading.current_thread().name)
-                    else:
-                        self._log.fatal(CollectorError(codes.Code(40901, index)),
-                                        parent=threading.current_thread().name)
-            except IndexError:
-                self._log.test(f'Inserting non-unique index')
-
-    def execute_index(self) -> Tuple[int, str]:  # TODO: Combine in one function for new API
-        try:
-            index: api.IndexType = index_queue.get_nowait().content
+            if mode == 0:
+                task: api.CatalogType = cls.catalog_queue.get_nowait().content
+            elif mode == 1:
+                task: api.TargetType = cls.target_queue.get_nowait().content
+            else:
+                raise ValueError(f'Unknown mode ({mode})')
         except queue.Empty:
             return 0, ''
 
-        self._log.debug(codes.Code(10902, index), threading.current_thread().name)
+        if mode == 0:
+            cls._log.debug(codes.Code(10901, task), threading.current_thread().name)
+        elif mode == 1:
+            cls._log.debug(codes.Code(10902, task), threading.current_thread().name)
 
         try:
-            targets = script_manager.execute_parser(index.script, 'targets', ())
-        except scripts.ScriptManagerError:
-            self._log.warn(codes.Code(30905, index), threading.current_thread().name)
-            return 1, index.script
+            result: list = script_manager.execute_parser(task.script, 'execute', (mode, task))
+
+            if not isinstance(result, list):
+                if mode == 0:
+                    cls._log.error(codes.Code(30907, task), threading.current_thread().name)
+                elif mode == 1:
+                    cls._log.error(codes.Code(30910, task), threading.current_thread().name)
+                script_manager.parser_error(task.script)
+                return 1, task.script
+        except scripts.ScriptNotFound:
+            if mode == 0:
+                cls._log.warn(codes.Code(30905, task), threading.current_thread().name)
+            elif mode == 1:
+                cls._log.warn(codes.Code(30908, task), threading.current_thread().name)
+            return 2, task.script
+        except scripts.ParserImplementationError:
+            if mode == 0:
+                cls._log.warn(codes.Code(30906, task), threading.current_thread().name)
+            elif mode == 1:
+                cls._log.warn(codes.Code(30909, task), threading.current_thread().name)
+            return 3, task.script
         except Exception as e:
-            self._log.fatal_msg(
-                codes.Code(40904, f'{index}: {e.__class__.__name__}: {str(e)}'),
+            if mode == 0:
+                code = 40903
+            elif mode == 1:
+                code = 40904
+
+            cls._log.fatal_msg(
+                codes.Code(code, f'{task.script}: {e.__class__.__name__}: {str(e)}'),
                 traceback.format_exc(),
                 threading.current_thread().name
             )
-            return 2, index.script
+            return 4, task.script
 
-        if isinstance(targets, (tuple, list)):
-            for i in targets:
-                self.insert_target(i)
-            self.insert_index(index)
-            self._log.debug(codes.Code(20902, index), threading.current_thread().name)
-            return 3, index.script
-        else:
-            self._log.warn(codes.Code(30906, index), threading.current_thread().name)
-            return 4, index.script
+        catalog: api.CatalogType = None
+        targets: List[api.TargetType] = []
+
+        for i in result:
+            if issubclass(type(i), api.Item):
+                if isinstance(i, api.IAnnounce):
+                    if HashStorage.check_item(i.hash(3), True):
+                        HashStorage.add_announced_item(i.hash(3))
+                        script_manager.event_handler.item_announced(i)
+                elif isinstance(i, api.IRelease):
+                    if HashStorage.check_item(i.hash(4)):
+                        id_ = HashStorage.add_item(i)
+                        script_manager.event_handler.item_released(i)
+
+                        if i.restock:
+                            i.restock.id = id_
+                            targets.append(i.restock)
+                elif isinstance(i, api.IRestock):
+                    if HashStorage.check_item_id(i.id):
+                        HashStorage.add_item(i, True)
+                        script_manager.event_handler.item_restock(i)
+            elif issubclass(type(i), api.Catalog):
+                if not catalog:
+                    catalog = i
+            elif issubclass(type(i), (api.Target, api.RestockTarget)):
+                targets.append(i)
+            elif issubclass(type(i), api.TargetEnd):
+                HashStorage.add_target(i.target.hash())
+                if isinstance(i, api.TEFail):
+                    script_manager.event_handler.target_end_failed(i)
+                elif isinstance(i, api.TESoldOut):
+                    script_manager.event_handler.target_end_sold_out(i)
+                elif isinstance(i, api.TESuccess):
+                    script_manager.event_handler.target_end_success(i)
+        if catalog:
+            cls.remove_catalog(catalog.script)
+            cls.insert_catalog(catalog)
+
+        for i in targets:
+            cls.insert_target(i)
+
+        if mode == 0:
+            cls._log.debug(codes.Code(10903), threading.current_thread().name)
+        elif mode == 1:
+            cls._log.debug(codes.Code(10904), threading.current_thread().name)
+
+        return 5, task.script
 
 
 class Pipe(ThreadClass):
@@ -281,58 +387,58 @@ class Pipe(ThreadClass):
             start: float = time.time()
             if self.state == 1:  # Active state
                 try:
-                    hash_storage.cleanup()  # Cleanup expired hashes
+                    HashStorage.cleanup()  # Cleanup expired hashes
 
                     if different := self._compare_parsers(
                             self.parsers_hashes, script_manager.hash()):  # Check for scripts (loaded/unloaded)
                         with script_manager.lock:
-                            self.log.info(codes.Code(20301))
+                            self._log.info(codes.Code(20301))
                             for i in different:
-                                self.log.debug(codes.Code(10301, i))
+                                self._log.debug(codes.Code(10301, i))
                                 try:
-                                    index = script_manager.execute_parser(i, 'index', ())
-                                    resolver.insert_index(index, True)
-                                    self.log.info(codes.Code(20303, i))
-                                except scripts.ScriptManagerError:
-                                    print('1' * 128)
+                                    if issubclass(type(catalog := script_manager.parsers[i].catalog), api.Catalog):
+                                        resolver.insert_catalog(catalog, True)
+                                        self._log.info(codes.Code(20303, i))
+                                    else:
+                                        self._log.error(codes.Code(40301, i))
                                 except Exception as e:
-                                    self.log.warn(codes.Code(30301, f'{i}: {e.__class__.__name__}: {str(e)}'))
+                                    self._log.warn(codes.Code(30301, f'{i}: {e.__class__.__name__}: {str(e)}'))
                             self.parsers_hashes = script_manager.hash()
-                            self.log.info(codes.Code(20302))
+                            self._log.info(codes.Code(20302))
                     elif self.parsers_hashes != script_manager.hash():
                         self.parsers_hashes = script_manager.hash()
 
-                    for i in resolver.indices.pop(slice(time.time())):  # Send indices
+                    for i in resolver.get_catalogs():  # Send catalogs
                         try:
-                            index_queue.put(
-                                library.PrioritizedItem(resolver.index_priority(i[1]), i[1]),
-                                timeout=storage.queues.index_queue_size
+                            resolver.catalog_queue.put(
+                                PrioritizedItem(resolver.catalog_priority(i), i),
+                                timeout=storage.queues.catalog_queue_size
                             )
-                        except queue.Full:  # TODO: Fix (index can't be lost)
-                            self.log.warn(codes.Code(30303, i))
+                        except queue.Full:  # TODO: Fix (catalog can't be lost)
+                            self._log.warn(codes.Code(30302, i))
 
                     for i in resolver.get_targets():  # Send targets
                         try:
-                            target_queue.put(
-                                library.PrioritizedItem(resolver.target_priority(i), i),
+                            resolver.target_queue.put(
+                                PrioritizedItem(resolver.target_priority(i), i),
                                 timeout=storage.queues.target_queue_put_wait
                             )
                         except queue.Full:
-                            self.log.warn(codes.Code(30302, i))
+                            self._log.warn(codes.Code(30303, i))
 
                 except Exception as e:
                     self.throw(codes.Code(50301, f'While working: {e.__class__.__name__}: {str(e)}'))
                     break
             elif self.state == 2:  # Pausing state
-                self.log.info(codes.Code(20002))
+                self._log.info(codes.Code(20002))
                 self._state = 3
             elif self.state == 3:  # Paused state
                 pass
             elif self.state == 4:  # Resuming state
-                self.log.info(codes.Code(20003))
+                self._log.info(codes.Code(20003))
                 self._state = 1
             elif self.state == 5:  # Stopping state
-                self.log.info(codes.Code(20005))
+                self._log.info(codes.Code(20005))
                 break
             delta: float = time.time() - start
             time.sleep(storage.pipe.tick - delta if storage.pipe.tick - delta > 0 else 0)
@@ -359,7 +465,7 @@ class Worker(ThreadClass):
             start = self.last_tick = time.time()
             if self.state == 1:
                 try:
-                    if resolver.execute_target()[0] > 1:
+                    if resolver.execute(1)[0] > 1:
                         self.idle = False
                     else:
                         self.idle = True
@@ -367,22 +473,22 @@ class Worker(ThreadClass):
                     self.throw(codes.Code(50401, f'While working: {e.__class__.__name__}: {str(e)}'))
                     break
             elif self.state == 2:  # Pausing state
-                self.log.info(codes.Code(20002))
+                self._log.info(codes.Code(20002))
                 self._state = 3
             elif self.state == 3:  # Paused state
                 pass
             elif self.state == 4:  # Resuming state
-                self.log.info(codes.Code(20003))
+                self._log.info(codes.Code(20003))
                 self._state = 1
             elif self.state == 5:  # Stopping state
-                self.log.info(codes.Code(20005))
+                self._log.info(codes.Code(20005))
                 break
             delta: float = time.time() - start
             self.speed = 0 if self.idle else round(1 / delta, 3)
             time.sleep(storage.worker.tick - delta if storage.worker.tick - delta > 0 else 0)
 
 
-class IndexWorker(ThreadClass):
+class CatalogWorker(ThreadClass):
     id: int
     start_time: float
     speed: float
@@ -390,7 +496,7 @@ class IndexWorker(ThreadClass):
     last_tick: float
 
     def __init__(self, id_: int):
-        super().__init__(f'IW-{id_}', IndexWorkerError)
+        super().__init__(f'CW-{id_}', CatalogWorkerError)
         self.id = id_
         self.speed = .0
         self.idle = True
@@ -403,8 +509,8 @@ class IndexWorker(ThreadClass):
             start = self.last_tick = time.time()
             if self.state == 1:
                 try:
-                    if resolver.execute_index()[0] < 1:
-                        if resolver.execute_target()[0] > 1:
+                    if resolver.execute()[0] < 1:
+                        if resolver.execute(1)[0] > 1:
                             self.idle = False
                         else:
                             self.idle = True
@@ -414,27 +520,27 @@ class IndexWorker(ThreadClass):
                     self.throw(codes.Code(51001, f'While working: {e.__class__.__name__}: {str(e)}'))
                     break
             elif self.state == 2:  # Pausing state
-                self.log.info(codes.Code(20002))
+                self._log.info(codes.Code(20002))
                 self._state = 3
             elif self.state == 3:  # Paused state
                 pass
             elif self.state == 4:  # Resuming state
-                self.log.info(codes.Code(20003))
+                self._log.info(codes.Code(20003))
                 self._state = 1
             elif self.state == 5:  # Stopping state
-                self.log.info(codes.Code(20005))
+                self._log.info(codes.Code(20005))
                 break
             delta: float = time.time() - start
             self.speed = 0 if self.idle else round(1 / delta, 3)
-            time.sleep(storage.index_worker.tick - delta if storage.index_worker.tick - delta > 0 else 0)
+            time.sleep(storage.catalog_worker.tick - delta if storage.catalog_worker.tick - delta > 0 else 0)
 
 
 class ThreadManager(ThreadClass):
     _lock_ticks: int
 
     lock: threading.RLock
-    index_workers_increment_id: int
-    index_workers: Dict[int, IndexWorker]
+    catalog_workers_increment_id: int
+    catalog_workers: Dict[int, CatalogWorker]
     workers_increment_id: int
     workers: Dict[int, Worker]
     pipe: Pipe
@@ -444,8 +550,8 @@ class ThreadManager(ThreadClass):
         self._lock_ticks = 0
 
         self.lock = threading.RLock()
-        self.index_workers_increment_id = 0
-        self.index_workers = {}
+        self.catalog_workers_increment_id = 0
+        self.catalog_workers = {}
         self.workers_increment_id = 0
         self.workers = {}
         self.pipe = Pipe()
@@ -455,20 +561,20 @@ class ThreadManager(ThreadClass):
             if not self.pipe.is_alive():
                 try:
                     self.pipe.start()
-                    self.log.info(codes.Code(20202))
+                    self._log.info(codes.Code(20202))
                 except RuntimeError:
                     if self.pipe.state == 5:
-                        self.log.warn(codes.Code(30201))
+                        self._log.warn(codes.Code(30201))
                     else:
-                        self.log.error(codes.Code(40201))
+                        self._log.error(codes.Code(40201))
                     self.pipe = Pipe()
-                    self.log.info(codes.Code(20201))
+                    self._log.info(codes.Code(20201))
 
     def check_workers(self) -> None:
         with self.lock:
             if len(self.workers) < storage.worker.count:
                 self.workers[self.workers_increment_id] = Worker(self.workers_increment_id)
-                self.log.info(codes.Code(20203, f'W-{self.workers_increment_id}'))
+                self._log.info(codes.Code(20203, f'W-{self.workers_increment_id}'))
                 self.workers_increment_id += 1
             elif len(self.workers) > storage.worker.count:
                 try:
@@ -480,37 +586,39 @@ class ThreadManager(ThreadClass):
                 if not v.is_alive():
                     try:
                         v.start()
-                        self.log.info(codes.Code(20204, str(v.id)))
+                        self._log.info(codes.Code(20204, str(v.id)))
                     except RuntimeError:
                         if v.state == 5:
-                            self.log.warn(codes.Code(30202, str(v.id)))
+                            self._log.warn(codes.Code(30202, str(v.id)))
                         else:
-                            self.log.error(codes.Code(40202, str(v.id)))
+                            self._log.error(codes.Code(40202, str(v.id)))
                         del self.workers[v.id]
 
-    def check_index_workers(self) -> None:
+    def check_catalog_workers(self) -> None:
         with self.lock:
-            if len(self.index_workers) < storage.index_worker.count:
-                self.index_workers[self.index_workers_increment_id] = IndexWorker(self.index_workers_increment_id)
-                self.log.info(codes.Code(20205, f'IW-{self.index_workers_increment_id}'))
-                self.index_workers_increment_id += 1
-            elif len(self.index_workers) > storage.index_worker.count:
+            if len(self.catalog_workers) < storage.catalog_worker.count:
+                self.catalog_workers[self.catalog_workers_increment_id] = CatalogWorker(
+                    self.catalog_workers_increment_id
+                )
+                self._log.info(codes.Code(20205, f'CW-{self.catalog_workers_increment_id}'))
+                self.catalog_workers_increment_id += 1
+            elif len(self.catalog_workers) > storage.catalog_worker.count:
                 try:
-                    self.stop_index_worker()
+                    self.stop_catalog_worker()
                 except StateError:
                     pass
 
-            for v in list(self.index_workers.values()):
+            for v in list(self.catalog_workers.values()):
                 if not v.is_alive():
                     try:
                         v.start()
-                        self.log.info(codes.Code(20206, str(v.id)))
+                        self._log.info(codes.Code(20206, str(v.id)))
                     except RuntimeError:
                         if v.state == 5:
-                            self.log.warn(codes.Code(30203, str(v.id)))
+                            self._log.warn(codes.Code(30203, str(v.id)))
                         else:
-                            self.log.error(codes.Code(40203, str(v.id)))
-                        del self.index_workers[v.id]
+                            self._log.error(codes.Code(40203, str(v.id)))
+                        del self.catalog_workers[v.id]
 
     def stop_worker(self, id_: int = -1, blocking: bool = False) -> int:
         with self.lock:
@@ -523,14 +631,14 @@ class ThreadManager(ThreadClass):
 
             return id_
 
-    def stop_index_worker(self, id_: int = -1, blocking: bool = False) -> int:
+    def stop_catalog_worker(self, id_: int = -1, blocking: bool = False) -> int:
         with self.lock:
             if id_ < 0:
-                id_ = random.choice(list(self.index_workers))
-            self.index_workers[id_].state = 5
+                id_ = random.choice(list(self.catalog_workers))
+            self.catalog_workers[id_].state = 5
 
             if blocking:
-                self.index_workers[id_].join(storage.index_worker.wait)
+                self.catalog_workers[id_].join(storage.catalog_worker.wait)
 
             return id_
 
@@ -545,14 +653,14 @@ class ThreadManager(ThreadClass):
                 self.workers[i].join(storage.worker.wait)
                 del self.workers[i]
 
-            for i in self.index_workers.values():
+            for i in self.catalog_workers.values():
                 try:
                     i.state = 5
                 except StateError:
                     continue
-            for i in tuple(self.index_workers):
-                self.index_workers[i].join(storage.index_worker.wait)
-                del self.index_workers[i]
+            for i in tuple(self.catalog_workers):
+                self.catalog_workers[i].join(storage.catalog_worker.wait)
+                del self.catalog_workers[i]
 
             try:
                 self.pipe.state = 5
@@ -570,7 +678,7 @@ class ThreadManager(ThreadClass):
                     if self.lock.acquire(False):
                         self.check_pipe()
                         self.check_workers()
-                        self.check_index_workers()
+                        self.check_catalog_workers()
                         try:
                             self._lock_ticks = 0
                             self.lock.release()
@@ -578,7 +686,7 @@ class ThreadManager(ThreadClass):
                             pass
                     else:
                         if self._lock_ticks == storage.thread_manager.lock_ticks:
-                            self.log.warn(codes.Code(30204))
+                            self._log.warn(codes.Code(30204))
                             try:
                                 self.lock.release()
                             except RuntimeError:
@@ -586,23 +694,23 @@ class ThreadManager(ThreadClass):
                         else:
                             self._lock_ticks += 1
                 elif self.state == 2:  # Pausing state
-                    self.log.info(codes.Code(20002))
+                    self._log.info(codes.Code(20002))
                     self.state = 3
                 elif self.state == 3:  # Paused state
                     pass
                 elif self.state == 4:  # Resuming state
-                    self.log.info(codes.Code(20003))
+                    self._log.info(codes.Code(20003))
                     self.state = 1
                 elif self.state == 5:  # Stopping state
-                    self.log.info(codes.Code(20004))
+                    self._log.info(codes.Code(20004))
                     self.stop_threads()
-                    self.log.info(codes.Code(20005))
+                    self._log.info(codes.Code(20005))
                     break
                 delta: float = time.time() - start
                 time.sleep(storage.thread_manager.tick - delta if
                            storage.thread_manager.tick - delta > 0 else 0)
             except Exception as e:
-                self.log.fatal_msg(codes.Code(50201, f'{e.__class__.__name__}: {str(e)}'), traceback.format_exc())
+                self._log.fatal_msg(codes.Code(50201, f'{e.__class__.__name__}: {str(e)}'), traceback.format_exc())
                 self.stop_threads()
                 self.throw(codes.Code(50201, f'While working: {e.__class__.__name__}: {str(e)}'))
                 break
@@ -610,7 +718,7 @@ class ThreadManager(ThreadClass):
     def close(self) -> float:
         self.state = 5
         return storage.pipe.wait + len(self.workers) * (
-                storage.worker.wait + 1) + len(self.index_workers) * (storage.index_worker.wait + 1)
+                storage.worker.wait + 1) + len(self.catalog_workers) * (storage.catalog_worker.wait + 1)
 
 
 class Core:
@@ -627,7 +735,7 @@ class Core:
         self.state = 1
 
         # Staring
-        hash_storage.load()  # Load success hashes from cache
+        HashStorage.load()  # Load success hashes from cache
         storage.config_load()  # Load ./config.yaml
         script_manager.index.config_load()  # Load ./scripts/config.yaml
         script_manager.event_handler.start()  # Start event loop
@@ -671,7 +779,7 @@ class Core:
 
             self.thread_manager.join(self.thread_manager.close())  # Stop pipeline and wait
 
-            api.provider.proxy_dump()  # Save proxies to ./proxy.yaml
+            provider.proxy_dump()  # Save proxies to ./proxy.yaml
             analytic.dump(2)  # Create stop report
 
             script_manager.event_handler.monitor_stopped()
@@ -681,7 +789,7 @@ class Core:
             script_manager.del_()  # Delete all data about scripts (index, parsers, etc.)
 
             self.log.info(codes.Code(20104))
-            hash_storage.unload()  # Dump success hashes
+            HashStorage.unload()  # Dump success hashes
             self.log.info(codes.Code(20105))
 
             self.log.info(codes.Code(20106))
@@ -689,12 +797,10 @@ class Core:
 
 if __name__ == 'source.core':
     script_manager: scripts.ScriptManager = scripts.ScriptManager()
-    hash_storage: cache.HashStorage = cache.HashStorage('h_success')
 
     analytic: analytics.Analytics = analytics.Analytics()
-    index_queue: queue.PriorityQueue = queue.PriorityQueue(storage.queues.index_queue_size)
-    target_queue: queue.PriorityQueue = queue.PriorityQueue(storage.queues.target_queue_size)
     resolver: Resolver = Resolver()
+    provider: Provider = Provider()
     server = uctp.peer.Peer(
         'monitor',
         RSA.import_key(open('./monitor.pem').read()),

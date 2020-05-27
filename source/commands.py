@@ -3,7 +3,7 @@ from typing import Any
 
 from uctp.peer import Peer
 
-from . import api
+from .cache import HashStorage
 from . import codes
 from . import core
 from . import logger
@@ -26,6 +26,7 @@ class Commands:
         core.server.commands.add_(self.config_load)
         core.server.commands.add_(self.config_get)
         core.server.commands.add_(self.config_set)
+        core.server.commands.add_(self.hash_storage_defrag)
         core.server.commands.add_(self.hash_storage_dump)
         core.server.commands.add_(self.hash_storage_backup)
         core.server.commands.add_(self.log_file_reset)
@@ -73,6 +74,7 @@ class Commands:
         core.server.commands.alias('c-load', 'config_load')
         core.server.commands.alias('c-get', 'config_get')
         core.server.commands.alias('c-set', 'config_set')
+        core.server.commands.alias('hs-defrag', 'hash_storage_defrag')
         core.server.commands.alias('hs-dump', 'hash_storage_dump')
         core.server.commands.alias('hs-backup', 'hash_storage_backup')
         core.server.commands.alias('l-file-reset', 'log_file_reset')
@@ -181,15 +183,21 @@ class Commands:
         else:
             raise IndexError(f'Namespace "{namespace}" not found')
 
+    def hash_storage_defrag(self, peer: Peer) -> bool:
+        self.log.info(codes.Code(21101,  f'{peer.name}: {inspect.stack()[0][3]}'))
+        HashStorage.defrag()
+        self.log.info(codes.Code(21102,  f'{peer.name}: {inspect.stack()[0][3]}'))
+        return True
+
     def hash_storage_dump(self, peer: Peer) -> bool:
         self.log.info(codes.Code(21101,  f'{peer.name}: {inspect.stack()[0][3]}'))
-        core.hash_storage.dump()
+        HashStorage.dump()
         self.log.info(codes.Code(21102,  f'{peer.name}: {inspect.stack()[0][3]}'))
         return True
 
     def hash_storage_backup(self, peer: Peer) -> bool:
         self.log.info(codes.Code(21101,  f'{peer.name}: {inspect.stack()[0][3]}'))
-        core.hash_storage.backup()
+        HashStorage.backup()
         self.log.info(codes.Code(21102,  f'{peer.name}: {inspect.stack()[0][3]}'))
         return True
 
@@ -202,32 +210,32 @@ class Commands:
 
     def proxy(self, peer: Peer, url: str) -> dict:
         self.log.info(codes.Code(21103,  f'{peer.name}: {inspect.stack()[0][3]}'))
-        return api.provider.proxies[url].export()
+        return core.provider.proxies[url].export()
 
     def proxies(self, peer: Peer) -> list:
         self.log.info(codes.Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))
-        return [i.url for i in api.provider.proxies.values()]
+        return [i.url for i in core.provider.proxies.values()]
 
     def proxy_dump(self, peer: Peer) -> bool:
-        api.provider.proxy_dump()
+        core.provider.proxy_dump()
         self.log.info(codes.Code(21102, f'{peer.name}: {inspect.stack()[0][3]}'))
         return True
 
     def proxy_load(self, peer: Peer) -> bool:
         self.log.info(codes.Code(21101, f'{peer.name}: {inspect.stack()[0][3]}'))
-        api.provider.proxy_load()
+        core.provider.proxy_load()
         self.log.info(codes.Code(21102, f'{peer.name}: {inspect.stack()[0][3]}'))
         return True
 
     def proxy_add(self, peer: Peer, url: str) -> bool:
         self.log.info(codes.Code(21101, f'{peer.name}: {inspect.stack()[0][3]}'))
-        api.provider.proxy_add(url)
+        core.provider.proxy_add(url)
         self.log.info(codes.Code(21102, f'{peer.name}: {inspect.stack()[0][3]}'))
         return True
 
     def proxy_remove(self, peer: Peer, url: str) -> bool:
         self.log.info(codes.Code(21101, f'{peer.name}: {inspect.stack()[0][3]}'))
-        api.provider.proxy_remove(url)
+        core.provider.proxy_remove(url)
         self.log.info(codes.Code(21102, f'{peer.name}: {inspect.stack()[0][3]}'))
         return True
 
@@ -354,23 +362,23 @@ class Commands:
 
     def index_worker_stop(self, peer: Peer, id_: int = -1) -> int:
         self.log.info(codes.Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))
-        return core.monitor.thread_manager.stop_index_worker(id_)
+        return core.monitor.thread_manager.stop_catalog_worker(id_)
 
     def index_worker_list(self, peer: Peer) -> list:
         self.log.info(codes.Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))
-        return list(core.monitor.thread_manager.index_workers)
+        return list(core.monitor.thread_manager.catalog_workers)
 
     def index_worker_pause(self, peer: Peer, id_: int) -> bool:
         self.log.info(codes.Code(21101, f'{peer.name}: {inspect.stack()[0][3]}'))
         with core.monitor.thread_manager.lock:
-            core.monitor.thread_manager.index_workers[id_].state = 2
+            core.monitor.thread_manager.catalog_workers[id_].state = 2
             self.log.info(codes.Code(21102, f'{peer.name}: {inspect.stack()[0][3]}'))
             return True
 
     def index_worker_resume(self, peer: Peer, id_: int) -> bool:
         self.log.info(codes.Code(21101, f'{peer.name}: {inspect.stack()[0][3]}'))
         with core.monitor.thread_manager.lock:
-            core.monitor.thread_manager.index_workers[id_].state = 4
+            core.monitor.thread_manager.catalog_workers[id_].state = 4
             self.log.info(codes.Code(21102, f'{peer.name}: {inspect.stack()[0][3]}'))
             return True
 

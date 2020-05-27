@@ -3,29 +3,41 @@ analytics:
   datetime: true
   datetime_format: '%Y-%m-%d %H:%M:%S.%f'
   path: reports
-event_handler:
-  tick: 1.0
-  wait: 3.0
-index_worker:
+cache:
+  item_time: 1209600
+  path: cache
+  target_time: 604800
+catalog_worker:
   count: 5
   tick: 1.0
   wait: 7
+event_handler:
+  tick: 0.5
+  wait: 3.0
 logger:
   level: 4
   message_content: 2
   mode: 1
   utc_time: true
 main:
-  cache_path: cache
   logs_path: logs
   production: false
 pipe:
-  success_hashes_time: 604800
   tick: 0.5
   wait: 10.0
 priority:
-  IInterval: 50
-  IOnce: 10
+  CInterval: 100
+  CScheduled: 50
+  CSmart: 10
+  RTInterval:
+  - 100
+  - 100
+  RTScheduled:
+  - 50
+  - 0
+  RTSmart:
+  - 10
+  - 0
   TInterval:
   - 100
   - 100
@@ -35,7 +47,7 @@ priority:
   TSmart:
   - 10
   - 0
-  interval_default: 100
+  catalog_default: 100
   target_default: 1001
 provider:
   delay: 7.5
@@ -43,8 +55,8 @@ provider:
   test_url: http://google.com/
   timeout: 3.0
 queues:
-  index_queue_put_wait: 8.0
-  index_queue_size: 256
+  catalog_queue_put_wait: 8.0
+  catalog_queue_size: 256
   target_queue_put_wait: 8.0
   target_queue_size: 512
 thread_manager:

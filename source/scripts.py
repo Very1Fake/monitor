@@ -13,18 +13,17 @@ from checksumdir import dirhash
 from packaging.version import Version, InvalidVersion
 
 from . import api
-from . import cache
 from . import codes
 from . import logger
 from . import storage
 from . import version
 
 
-class ScriptIndexError(Exception):
+class ScriptNotFound(Exception):
     pass
 
 
-class ScriptManagerError(Exception):
+class ParserImplementationError(Exception):
     pass
 
 
@@ -264,8 +263,9 @@ class ScriptIndex:
         return next(i for i in self.index if i['name'] == name)
 
 
-class EventHandler:  # TODO: unload protection
+class EventHandler:
     _active: bool
+    _lock: threading.Lock
     _log: logger.Logger
 
     executors: Dict[str, api.EventsExecutor]
@@ -274,6 +274,7 @@ class EventHandler:  # TODO: unload protection
 
     def __init__(self):
         self._active = False
+        self._lock = threading.Lock()
         self._log = logger.Logger('EH')
 
         self.executors = {}
@@ -287,16 +288,17 @@ class EventHandler:  # TODO: unload protection
             try:
                 task: Tuple[str, list] = self.pool.get_nowait()
 
-                for k, v in self.executors.items():
-                    try:
-                        getattr(v, task[0])(*task[1])
-                    except AttributeError:
-                        pass
-                    except Exception as e:
-                        if storage.main.production:
-                            self._log.error(codes.Code(40701, f'{k}: {e.__class__.__name__}: {str(e)}'))
-                        else:
-                            self._log.fatal_msg(codes.Code(40701, k), traceback.format_exc())
+                with self._lock:
+                    for k, v in self.executors.items():
+                        try:
+                            getattr(v, task[0])(*task[1])
+                        except AttributeError:
+                            pass
+                        except Exception as e:
+                            if storage.main.production:
+                                self._log.error(codes.Code(40701, f'{k}: {e.__class__.__name__}: {str(e)}'))
+                            else:
+                                self._log.fatal_msg(codes.Code(40701, k), traceback.format_exc())
             except queue.Empty:
                 if not self._active:
                     break
@@ -327,13 +329,15 @@ class EventHandler:  # TODO: unload protection
             self._log.warn(codes.Code(30702))
 
     def add(self, name: str, executor: api.EventsExecutor) -> bool:
-        self.executors[name] = executor(name, logger.Logger('EE/' + name))
-        return True
+        with self._lock:
+            self.executors[name] = executor(name, logger.Logger('EE/' + name))
+            return True
 
     def delete(self, name: str) -> bool:
-        if name in self.executors:
-            del self.executors[name]
-        return True
+        with self._lock:
+            if name in self.executors:
+                del self.executors[name]
+            return True
 
     def monitor_starting(self) -> None:
         self.pool.put(('e_monitor_starting', ()))
@@ -350,16 +354,28 @@ class EventHandler:  # TODO: unload protection
     def alert(self, code: codes.Code, thread: str) -> None:
         self.pool.put(('e_alert', (code, thread)))
 
-    def success_status(self, status: api.SSuccess) -> None:
-        self.pool.put(('e_success_status', (status,)))
+    def item_announced(self, item: api.IAnnounce) -> None:
+        self.pool.put(('e_item_announced', (item,)))
 
-    def fail_status(self, status: api.SFail) -> None:
-        self.pool.put(('e_fail_status', (status,)))
+    def item_released(self, item: api.IRelease) -> None:
+        self.pool.put(('e_item_released', (item,)))
+
+    def item_restock(self, item: api.IRestock) -> None:
+        self.pool.put(('e_item_restock', (item,)))
+
+    def target_end_failed(self, target_end: api.TEFail) -> None:
+        self.pool.put(('e_target_end_failed', (target_end,)))
+
+    def target_end_sold_out(self, target_end: api.TESoldOut) -> None:
+        self.pool.put(('e_target_end_sold_out', (target_end,)))
+
+    def target_end_success(self, target_end: api.TESuccess) -> None:
+        self.pool.put(('e_target_end_success', (target_end,)))
 
 
 class ScriptManager:
     log: logger.Logger
-    lock: threading.Lock
+    lock: threading.RLock
     index: ScriptIndex
     scripts: Dict[str, dict]
     parsers: Dict[str, api.Parser]
@@ -367,7 +383,7 @@ class ScriptManager:
 
     def __init__(self):
         self.log = logger.Logger('SM')
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.index = ScriptIndex()
         self.scripts = {}
         self.parsers = {}
@@ -395,8 +411,7 @@ class ScriptManager:
                 self.parsers[script['name']] = getattr(module, 'Parser')(
                     script['name'],
                     logger.Logger('Parser/' + script['name']),
-                    api.SubProvider(script['name']),
-                    cache.HashStorage('sh_' + script['name'])
+                    api.SubProvider(script['name'])
                 )
             else:
                 self.parsers[script['name']] = getattr(module, 'Parser')
@@ -532,22 +547,39 @@ class ScriptManager:
     def hash(self) -> Dict[str, str]:
         return {i: self.scripts[i]['_hash'] for i in self.parsers if i in self.scripts}
 
+    def parser_error(self, name: str):
+        if not isinstance(name, str):
+            raise TypeError('name must be str')
+
+        with self.lock:
+            try:
+                self.scripts[name]['_errors'] += 1
+            except KeyError:
+                raise ScriptNotFound
+
     def get_parser(self, name: str):
-        try:
-            if self.scripts[name]['keep']:
-                return self.parsers[name]
-            else:
-                return self.parsers[name](name, logger.Logger(f'parser/{name}'))
-        except KeyError:
-            raise ScriptManagerError(f'Script "{name}" not loaded')
+        with self.lock:
+            try:
+                keep = self.scripts[name]['keep']
+            except KeyError:
+                raise ScriptNotFound
+
+            try:
+                parser = self.parsers[name]
+            except KeyError:
+                raise ParserImplementationError
+        if keep:
+            return parser
+        else:
+            return parser.__init__(name, logger.Logger(f'parser/{name}'), api.SubProvider(name))
 
     def execute_parser(self, name: str, func: str, args: tuple) -> Any:
         try:
             return getattr(self.get_parser(name), func)(*args)
-        except ScriptManagerError as e:
+        except (ParserImplementationError, ScriptNotFound) as e:
             raise e
         except Exception as e:
-            try:
+            with self.lock:
                 scripts = self.scripts[name]
                 if scripts['max-errors'] < 0 or \
                         scripts['_errors'] >= scripts['max-errors']:
@@ -556,5 +588,3 @@ class ScriptManager:
                 else:
                     scripts['_errors'] += 1
                 raise e
-            except KeyError:
-                raise ScriptManagerError(f'Script "{name}" not loaded')
