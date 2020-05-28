@@ -143,14 +143,13 @@ class Resolver:
                         cls.catalogs[time.time()] = catalog
                     else:
                         if isinstance(catalog, api.CSmart):
-                            time_ = tools.smart_extractor(
-                                tools.smart_gen(catalog.timestamp, catalog.length, catalog.scatter),
-                                time.time()
-                            )
-                            if time_:  # TODO: Fix here (expired must be checked once)
-                                cls.catalogs[time_] = catalog
+                            if catalog.expired:
+                                cls._log.warn(codes.Code(30911, str(catalog)))
                             else:
-                                cls._log.warn(f'Smart catalog expired: {catalog}')
+                                if time_ := tools.SmartGen(catalog.timestamp, catalog.length,
+                                                           catalog.scatter, catalog.exp).extract() == catalog.timestamp:
+                                    catalog.expired = True
+                                cls.targets[time_] = catalog
                         elif isinstance(catalog, api.CScheduled):
                             cls.catalogs[catalog.timestamp] = catalog
                         elif isinstance(catalog, api.CInterval):
@@ -170,14 +169,13 @@ class Resolver:
             if HashStorage.check_target(target.hash()):
                 try:
                     if isinstance(target, api.TSmart):
-                        time_ = tools.smart_extractor(
-                            tools.smart_gen(target.timestamp, target.length, target.scatter),
-                            time.time()
-                        )
-                        if time_:  # TODO: Fix here (expired must be checked once)
-                            cls.targets[time_] = target
+                        if target.expired:
+                            cls._log.warn(codes.Code(30912, str(target)))
                         else:
-                            cls._log.warn(f'Smart target expired: {target}')
+                            if time_ := tools.SmartGen(target.timestamp, target.length,
+                                                       target.scatter, target.exp).extract() == target.timestamp:
+                                target.expired = True
+                            cls.targets[time_] = target
                     elif isinstance(target, api.TScheduled):
                         cls.targets[target.timestamp] = target
                     elif isinstance(target, api.TInterval):

@@ -106,9 +106,35 @@ class Scheduled:
 
 @dataclass
 class Smart:  # TODO: Fix
-    length: int = field(compare=False)
-    scatter: int = field(compare=False)
     timestamp: float = field(compare=False)
+    length: int = field(compare=False)
+    scatter: int = field(compare=False, default=1)
+    exp: float = field(compare=False, default=2.)
+    expired: bool = field(init=False)
+
+    def __post_init__(self):
+        if not isinstance(self.timestamp, float):
+            raise TypeError('timestamp must be float')
+
+        if isinstance(self.length, int):
+            if self.length < 0:
+                raise ValueError('length cannot be less than 0')
+        else:
+            raise TypeError('length must be int')
+
+        if isinstance(self.scatter, int):
+            if self.scatter < 1:
+                raise ValueError('scatter cannot be less than 1')
+        else:
+            raise TypeError('scatter must be int')
+
+        if isinstance(self.exp, float):
+            if self.exp <= 1:
+                raise ValueError('exp cannot be more than 1')
+        else:
+            raise TypeError('exp must be float')
+
+        self.expired = False
 
 
 @dataclass

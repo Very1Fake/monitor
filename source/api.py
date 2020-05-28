@@ -30,6 +30,12 @@ CURRENCIES = {
 
 
 SIZE_TYPES = {
+    'P-W-W': 14,
+    'P-M-W': 13,
+    'P-U-W': 12,
+    'C-W-W': 11,
+    'C-M-W': 10,
+    'C-U-W': 9,
     'S-JP-W': 8,
     'S-JP-M': 7,
     'S-EU-W': 6,
@@ -96,7 +102,7 @@ class CSmart(Smart, Catalog):
 class Target(abc.ABC):
     name: str
     script: str
-    data: Any = field(repr=False)
+    data: Union[str, bytes, int, float, list, tuple, dict] = field(repr=False)
     reused: int = field(init=False, compare=False, default=-1)
 
     def __post_init__(self):
@@ -104,6 +110,8 @@ class Target(abc.ABC):
             raise TypeError('name must be str')
         if not isinstance(self.script, str):
             raise TypeError('scripts must be str')
+        if not isinstance(self.data, (str, bytes, int, float, list, tuple, dict)):
+            raise TypeError('data must be (str bytes, int, float, list, tuple, dict)')
 
     def reuse(self, max_: int) -> int:
         if max_ > 0:
@@ -114,7 +122,11 @@ class Target(abc.ABC):
         return self.reused
 
     def hash(self) -> bytes:
-        return hashlib.blake2s(self.name.encode() + self.script.encode()).digest()
+        return hashlib.blake2s(
+            self.name.encode() +
+            (self.data.encode() if isinstance(self.data, (str, bytes)) else str(self.data).encode()) +
+            self.script.encode()
+        ).digest()
 
     def __hash__(self) -> int:
         return hash(self.hash())
@@ -144,12 +156,15 @@ class TSmart(Smart, Target):
 @dataclass
 class RestockTarget(abc.ABC):
     script: str
+    data: Union[str, bytes, int, float, list, tuple, dict] = field(repr=False)
     item: int = field(init=False, default=-1)
     reused: int = field(init=False, default=-1)
 
     def __post_init__(self):
         if not isinstance(self.script, str):
             raise TypeError('scripts must be str')
+        if not isinstance(self.data, (str, bytes, int, float, list, tuple, dict)):
+            raise TypeError('data must be (str bytes, int, float, list, tuple, dict)')
 
     def reuse(self, max_: int) -> int:
         if max_ > 0:
@@ -160,7 +175,11 @@ class RestockTarget(abc.ABC):
         return self.reused
 
     def hash(self) -> bytes:
-        return hashlib.blake2s(self.script.encode() + str(self.item).encode()).digest()
+        return hashlib.blake2s(
+            self.script.encode() +
+            (self.data.encode() if isinstance(self.data, (str, bytes)) else str(self.data).encode()) +
+            str(self.item).encode()
+        ).digest()
 
     def __hash__(self):
         return hash(self.hash())
@@ -242,17 +261,17 @@ class Price:
 
 @dataclass
 class Size:
-    size: float
+    size: str
     url: str = ''
 
     def __post_init__(self):
-        if not isinstance(self.size, float):
-            raise TypeError('size must be float')
+        if not isinstance(self.size, str):
+            raise TypeError('size must be str')
         if not isinstance(self.url, str):
             raise TypeError('size must be str')
 
     def hash(self) -> bytes:
-        return hashlib.blake2s(str(self.size).encode() + self.url.encode()).digest()
+        return hashlib.blake2s(self.size.encode() + self.url.encode()).digest()
 
     def export(self) -> list:
         return [self.size, self.url]

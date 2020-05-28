@@ -137,6 +137,8 @@ _codes: Dict[int, str] = {
     30908: 'Target lost while executing (script unloaded)',
     30909: 'Target lost while executing (script has no parser)',
     30910: 'Target lost while executing (bad result)',
+    30911: 'Smart catalog expired',
+    30912: 'Smart target expired',
 
     # Provider (312xx)
     31201: 'Proxy added',

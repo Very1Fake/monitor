@@ -13,22 +13,59 @@ def get_time(global_: bool = True, name: bool = False) -> str:
     return datetime.strftime(time_, time_format.replace(' ', '_') if name else time_format)
 
 
-def smart_gen(time_: float, length: int, scatter: int = 1) -> Iterator[float]:
-    if length < 0:
-        raise ValueError('length cannot be less than 0')
-    if scatter < 1:
-        raise ValueError('scatter cannot be less than 1')
+class SmartGen:
+    time: float
+    length: int
+    scatter: int
+    exp: float
 
-    for i in range(length - 1, -1, -scatter):
-        yield time_ - 2 ** i
-    else:
-        yield time_
+    def __init__(self, time_: float, length: int, scatter: int = 1, exp: float = 2.) -> None:
+        if isinstance(time_, float):
+            self.time = time_
+        else:
+            raise TypeError('time_ must be float')
 
+        if isinstance(length, int):
+            if length < 0:
+                raise ValueError('length cannot be less than 0')
+            else:
+                self.length = length
+        else:
+            raise TypeError('length must be int')
 
-def smart_extractor(gen: Iterator[float], now: float = None) -> float:
-    if not now:
-        now = time.time()
-    for i in gen:
-        if i > now:
-            return i
+        if isinstance(scatter, int):
+            if scatter < 1:
+                raise ValueError('scatter cannot be less than 1')
+            else:
+                self.scatter = scatter
+        else:
+            raise TypeError('scatter must be int')
 
+        if isinstance(exp, float):
+            if exp <= 1:
+                raise ValueError('exp cannot be more than 1')
+            else:
+                self.exp = exp
+        else:
+            raise TypeError('exp must be float')
+
+    def __iter__(self) -> Iterator[float]:
+        return self.generator()
+
+    def generator(self) -> Iterator[float]:
+        for i in range(self.length - 1, -1, -self.scatter):
+            yield self.time - self.exp ** i
+        else:
+            yield self.time
+
+    def extract(self, now: float = None):
+        if now:
+            if not isinstance(now, float):
+                raise TypeError('time_ must be float')
+        else:
+            now = time.time()
+
+        for i in self:
+            if i > now:
+                return i
+        return self.time

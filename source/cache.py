@@ -50,21 +50,16 @@ CREATE TABLE IF NOT EXISTS Sizes (item INTEGER PRIMARY KEY NOT NULL REFERENCES R
     def unload(cls) -> None:
         with cls._lock, cls.__db as c:
             check()
-            f = open(f'{storage.cache.path}/hash.sql', 'w+')
-            for i in c.iterdump():
-                f.write(i + '\n')
-                f.flush()
+            cls.__db.backup(sqlite3.connect(f'{storage.cache.path}/hash.db'))
 
     @classmethod
     def load(cls) -> bool:
         with cls._lock, cls.__db as c:
             check()
-            if os.path.isfile(f'{storage.cache.path}/hash.sql'):
-                f = open(f'{storage.cache.path}/hash.sql')
+            if os.path.isfile(f'{storage.cache.path}/hash.db'):
                 cls._clear()
 
-                while line := f.readline():
-                    c.execute(line)
+                sqlite3.connect(f'{storage.cache.path}/hash.db').backup(cls.__db)
                 return True
             else:
                 return False
@@ -99,8 +94,9 @@ CREATE TABLE IF NOT EXISTS Sizes (item INTEGER PRIMARY KEY NOT NULL REFERENCES R
     def cleanup(cls) -> None:
         with cls._lock, cls.__db as c:
             cls.check()
-            c.execute('DELETE FROM targets WHERE time<=?', (time.time() - storage.cache.target_time,))
-            c.execute('DELETE FROM items WHERE time<=?', (time.time() - storage.cache.item_time,))
+            c.execute('DELETE FROM Targets WHERE time<=?', (time.time() - storage.cache.target_time,))
+            c.execute('DELETE FROM AnnouncedItems WHERE time<=?', (time.time() - storage.cache.item_time,))
+            c.execute('DELETE FROM Items WHERE time<=?', (time.time() - storage.cache.item_time,))
 
     @classmethod
     def contains(cls, hash_: bytes, item: bool = True) -> bool:
