@@ -12,7 +12,7 @@ catalog_worker:
   tick: 1.0
   wait: 7
 event_handler:
-  tick: 0.5
+  tick: 0.1
   wait: 3.0
 logger:
   level: 4

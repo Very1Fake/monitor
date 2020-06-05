@@ -581,10 +581,9 @@ class ScriptManager:
         except Exception as e:
             with self.lock:
                 scripts = self.scripts[name]
+                scripts['_errors'] += 1
                 if scripts['max-errors'] < 0 or \
                         scripts['_errors'] >= scripts['max-errors']:
                     self.log.warn(codes.Code(30507, name))
                     self.unload(name)
-                else:
-                    scripts['_errors'] += 1
                 raise e

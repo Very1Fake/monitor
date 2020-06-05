@@ -68,6 +68,15 @@ class Catalog(abc.ABC):
         if not isinstance(self.script, str):
             raise TypeError('script must be str')
 
+    def __eq__(self, other):
+        if issubclass(type(other), Target):
+            if other.script == self.script:
+                return True
+            else:
+                return False
+        else:
+            return False
+
     def hash(self) -> bytes:
         return hashlib.blake2s(self.script.encode()).digest()
 
@@ -80,17 +89,20 @@ CatalogType = TypeVar('CatalogType', bound=Catalog)
 
 @dataclass
 class CInterval(Interval, Catalog):
-    pass
+    def __eq__(self, other):
+        return Catalog.__eq__(self, other)
 
 
 @dataclass
 class CScheduled(Scheduled, Catalog):
-    pass
+    def __eq__(self, other):
+        return Catalog.__eq__(self, other)
 
 
 @dataclass
 class CSmart(Smart, Catalog):
-    pass
+    def __eq__(self, other):
+        return Catalog.__eq__(self, other)
 
 
 # Target classes
@@ -104,12 +116,21 @@ class Target(abc.ABC):
     reused: int = field(init=False, compare=False, default=-1)
 
     def __post_init__(self):
-        if isinstance(self.name, str):
+        if not isinstance(self.name, str):
             raise TypeError('name must be str')
         if not isinstance(self.script, str):
             raise TypeError('scripts must be str')
         if not isinstance(self.data, (str, bytes, int, float, list, tuple, dict)):
             raise TypeError('data must be (str bytes, int, float, list, tuple, dict)')
+
+    def __eq__(self, other):
+        if issubclass(type(other), Target):
+            if other.name == self.name and other.script == self.script and other.data == self.data:
+                return True
+            else:
+                return False
+        else:
+            return False
 
     def reuse(self, max_: int) -> int:
         if max_ > 0:
@@ -135,17 +156,20 @@ TargetType = TypeVar('TargetType', bound=Target)
 
 @dataclass
 class TInterval(Interval, Target):
-    pass
+    def __eq__(self, other):
+        return Target.__eq__(self, other)
 
 
 @dataclass
 class TScheduled(Scheduled, Target):
-    pass
+    def __eq__(self, other):
+        return Target.__eq__(self, other)
 
 
 @dataclass
 class TSmart(Smart, Target):
-    pass
+    def __eq__(self, other):
+        return Target.__eq__(self, other)
 
 
 # Restock Target classes
@@ -163,6 +187,15 @@ class RestockTarget(abc.ABC):
             raise TypeError('scripts must be str')
         if not isinstance(self.data, (str, bytes, int, float, list, tuple, dict)):
             raise TypeError('data must be (str bytes, int, float, list, tuple, dict)')
+
+    def __eq__(self, other):
+        if issubclass(type(other), RestockTarget):
+            if other.script == self.script and other.data == self.data and other.item == self.item:
+                return True
+            else:
+                return False
+        else:
+            return False
 
     def reuse(self, max_: int) -> int:
         if max_ > 0:
@@ -188,17 +221,20 @@ RestockTargetType = TypeVar('RestockTargetType', bound=RestockTarget)
 
 @dataclass
 class RTInterval(Interval, RestockTarget):
-    pass
+    def __eq__(self, other):
+        return RestockTarget.__eq__(self, other)
 
 
 @dataclass
 class RTScheduled(Scheduled, RestockTarget):
-    pass
+    def __eq__(self, other):
+        return RestockTarget.__eq__(self, other)
 
 
 @dataclass
 class RTSmart(Smart, RestockTarget):
-    pass
+    def __eq__(self, other):
+        return RestockTarget.__eq__(self, other)
 
 
 # Target EOF classes
@@ -248,10 +284,16 @@ class Price:
             raise TypeError('currency must be int')
 
         if not isinstance(self.current, float):
-            raise TypeError('current must be float')
+            if isinstance(self.current, int):
+                self.current = float(self.current)
+            else:
+                raise TypeError('current must be float')
 
         if not isinstance(self.old, float):
-            raise TypeError('old must be float')
+            if isinstance(self.old, int):
+                self.old = float(self.old)
+            else:
+                raise TypeError('old must be float')
 
     def hash(self) -> bytes:
         return hashlib.blake2s(bytes(self.currency) + str(self.current).encode() + str(self.old).encode()).digest()
@@ -482,7 +524,7 @@ class IRelease(Item):
         else:
             self.restock = None
 
-        super().__init__(name, channel, url, image, description, price, sizes, footer, fields)
+        super().__init__(url, channel, name, image, description, price, sizes, footer, fields)
 
 
 class IRestock(Item):

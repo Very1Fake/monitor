@@ -14,6 +14,10 @@ from . import storage
 # Exception classes
 
 
+class ProxyError(Exception):
+    pass
+
+
 class ProviderError(Exception):
     pass
 
@@ -56,7 +60,7 @@ class Schedule(dict):
         else:
             super().__delitem__(time_)
 
-    def pop(self, time_: Union[float, int, slice]) -> List[Any]:
+    def pop_time(self, time_: Union[float, int, slice]) -> List[Any]:
         items = list(self.__getitem__(time_))
         del self[time_]
         return items
@@ -92,7 +96,10 @@ class Interval:
 
     def __post_init__(self):
         if not isinstance(self.interval, float):
-            raise TypeError('interval must be float')
+            if isinstance(self.interval, int):
+                self.interval = float(self.interval)
+            else:
+                raise TypeError('interval must be float')
 
 
 @dataclass
@@ -101,11 +108,14 @@ class Scheduled:
 
     def __post_init__(self):
         if not isinstance(self.timestamp, float):
-            raise TypeError('timestamp must be float')
+            if isinstance(self.timestamp, int):
+                self.timestamp = float(self.timestamp)
+            else:
+                raise TypeError('timestamp must be float')
 
 
 @dataclass
-class Smart:  # TODO: Fix
+class Smart:
     timestamp: float = field(compare=False)
     length: int = field(compare=False)
     scatter: int = field(compare=False, default=1)
@@ -114,7 +124,10 @@ class Smart:  # TODO: Fix
 
     def __post_init__(self):
         if not isinstance(self.timestamp, float):
-            raise TypeError('timestamp must be float')
+            if isinstance(self.timestamp, int):
+                self.timestamp = float(self.timestamp)
+            else:
+                raise TypeError('timestamp must be float')
 
         if isinstance(self.length, int):
             if self.length < 0:
@@ -223,7 +236,7 @@ class Provider(ProviderCore):
                     self._proxies[i] = Proxy(i)
                     count += 1
                 else:
-                    self.log.error(codes.Code(41201, proxy))
+                    self.log.error(codes.Code(41201, i))
         if count:
             self.log.warn(codes.Code(31203, str(count)))
 
@@ -246,31 +259,34 @@ class Provider(ProviderCore):
             raise KeyError('Proxy with this url not specified')
 
 
-class SubProvider(ProviderCore):
+class SubProvider(ProviderCore):  # TODO: SubProvider global mode switcher
+    pos: int = 0
+
     _log: logger.Logger
-    _scripts: str
-    pos: int
+    _script: str
 
     def __init__(self, script: str):
         self._log = logger.Logger('SPR')
         self._script = script
-        self.pos = 0
 
-    def _proxy(self) -> Proxy:
-        valid = [k for k, v in self._proxies.items() if v.bad < storage.provider.max_bad]
+    @classmethod
+    def _proxy(cls) -> Proxy:
+        valid = [k for k, v in cls._proxies.items() if v.bad < storage.provider.max_bad]
 
         if valid:
-            if self.pos >= len(valid) - 1:
-                self.pos = 0
+            if cls.pos >= len(valid) - 1:
+                cls.pos = 0
             else:
-                self.pos += 1
-            return self._proxies[valid[self.pos]]
+                cls.pos += 1
+            return cls._proxies[valid[cls.pos]]
         else:
             return Proxy('')
 
     def _get(self, func, *args, **kwargs):
         try:
             return func.get(*args, **kwargs)
+        except requests.exceptions.ProxyError:
+            raise ProxyError
         except Exception as e:
             if isinstance(e, requests.ConnectionError):
                 self._log.warn(codes.Code(31301), self._script)
@@ -297,9 +313,6 @@ class SubProvider(ProviderCore):
             raise TypeError('mode must be int')
         if not isinstance(proxy, bool):
             raise TypeError('proxy must be bool')
-        else:
-            if proxy:
-                proxy_ = self._proxy()
         if timeout:
             if not isinstance(timeout, int):
                 raise TypeError('int must be int')
@@ -321,30 +334,44 @@ class SubProvider(ProviderCore):
         else:
             cookies: Dict[str, Any] = {}
 
-        try:
-            if mode == 0:
-                return self._get(
-                    requests,
-                    url,
-                    params=params,
-                    headers=headers,
-                    cookies=cookies,
-                    proxies=proxy_.use() if proxy else {},
-                    timeout=timeout
-                ).text
-            elif mode == 1:
-                return self._get(
-                    cfscrape.create_scraper(delay=kwargs['delay'] if 'delay' in kwargs else storage.provider.delay),
-                    url,
-                    params=params,
-                    headers=headers,
-                    cookies=cookies,
-                    proxies=proxy_.use() if proxy else {},
-                    timeout=timeout
-                ).text
-            else:
-                raise ValueError(f'Unknown mode, {mode}')
-        except SubProviderError as e:
+        for i in range(5):  # Optimize (now 5-times loop if bad proxy)
             if proxy:
+                proxy_ = self._proxy()
+            else:
+                proxy_ = Proxy('')
+
+            try:
+                if mode == 0:
+                    return self._get(
+                        requests,
+                        url,
+                        params=params,
+                        headers=headers,
+                        cookies=cookies,
+                        proxies=proxy_.use(),
+                        timeout=timeout
+                    ).text
+                elif mode == 1:
+                    return self._get(
+                        cfscrape.create_scraper(delay=kwargs['delay'] if 'delay' in kwargs else storage.provider.delay),
+                        url,
+                        params=params,
+                        headers=headers,
+                        cookies=cookies,
+                        proxies=proxy_.use(),
+                        timeout=timeout
+                    ).text
+                else:
+                    raise ValueError(f'Unknown mode, {mode}')
+            except ProxyError:
                 proxy_.bad += 1
-            raise e
+            except SubProviderError as e:
+                proxy_.bad += 1
+
+                if proxy and proxy_.url:  # Make optimization
+                    raise type(e)(f'{e} (proxy {proxy_.url})')
+                else:
+                    raise e
+        else:
+            if proxy and proxy_.url:
+                raise ProxyError(proxy_.url)

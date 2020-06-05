@@ -17,7 +17,7 @@ from . import logger
 from . import scripts
 from . import storage
 from . import tools
-from .cache import HashStorage
+from .cache import UniquenessError, HashStorage
 from .library import PrioritizedItem, UniqueSchedule, Provider
 
 
@@ -146,10 +146,18 @@ class Resolver:
                             if catalog.expired:
                                 cls._log.warn(codes.Code(30911, str(catalog)))
                             else:
-                                if time_ := tools.SmartGen(catalog.timestamp, catalog.length,
-                                                           catalog.scatter, catalog.exp).extract() == catalog.timestamp:
+                                if (time_ := tools.SmartGen(catalog.timestamp,catalog.length, catalog.scatter,
+                                                            catalog.exp).extract()) == catalog.timestamp:
                                     catalog.expired = True
-                                cls.targets[time_] = catalog
+
+                                for i in range(100):  # TODO: Optimize
+                                    if time_ in cls.catalogs:
+                                        time_ += .0001
+                                    else:
+                                        cls.catalogs[time_] = catalog
+                                        break
+                                else:
+                                    cls._log.error(f'Smart catalog lost (calibration not passed): {catalog}')
                         elif isinstance(catalog, api.CScheduled):
                             cls.catalogs[catalog.timestamp] = catalog
                         elif isinstance(catalog, api.CInterval):
@@ -172,10 +180,18 @@ class Resolver:
                         if target.expired:
                             cls._log.warn(codes.Code(30912, str(target)))
                         else:
-                            if time_ := tools.SmartGen(target.timestamp, target.length,
-                                                       target.scatter, target.exp).extract() == target.timestamp:
+                            if (time_ := tools.SmartGen(target.timestamp, target.length,
+                                                        target.scatter, target.exp).extract()) == target.timestamp:
                                 target.expired = True
-                            cls.targets[time_] = target
+
+                            for i in range(100):  # TODO: Optimize
+                                if time_ in cls.targets:
+                                    time_ += .0001
+                                else:
+                                    cls.targets[time_] = target
+                                    break
+                            else:
+                                cls._log.error(f'Smart target lost (calibration not passed): {target}')
                     elif isinstance(target, api.TScheduled):
                         cls.targets[target.timestamp] = target
                     elif isinstance(target, api.TInterval):
@@ -310,6 +326,8 @@ class Resolver:
                 traceback.format_exc(),
                 threading.current_thread().name
             )
+            script_manager.event_handler.alert(codes.Code(code, f'{task.script}: {e.__class__.__name__}: {str(e)}'),
+                                               threading.current_thread().name)
             return 4, task.script
 
         catalog: api.CatalogType = None
@@ -339,13 +357,18 @@ class Resolver:
             elif issubclass(type(i), (api.Target, api.RestockTarget)):
                 targets.append(i)
             elif issubclass(type(i), api.TargetEnd):
-                HashStorage.add_target(i.target.hash())
+                try:
+                    HashStorage.add_target(i.target.hash())
+                except UniquenessError:
+                    pass
+
                 if isinstance(i, api.TEFail):
                     script_manager.event_handler.target_end_failed(i)
                 elif isinstance(i, api.TESoldOut):
                     script_manager.event_handler.target_end_sold_out(i)
                 elif isinstance(i, api.TESuccess):
                     script_manager.event_handler.target_end_success(i)
+
         if catalog:
             cls.remove_catalog(catalog.script)
             cls.insert_catalog(catalog)
@@ -508,7 +531,7 @@ class CatalogWorker(ThreadClass):
             if self.state == 1:
                 try:
                     if resolver.execute()[0] < 1:
-                        if resolver.execute(1)[0] > 1:
+                        if resolver.execute(1)[0] > 1:  # TODO: Switcher for assistance
                             self.idle = False
                         else:
                             self.idle = True
