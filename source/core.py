@@ -146,7 +146,7 @@ class Resolver:
                             if catalog.expired:
                                 cls._log.warn(codes.Code(30911, str(catalog)))
                             else:
-                                if (time_ := tools.SmartGen(catalog.timestamp,catalog.length, catalog.scatter,
+                                if (time_ := tools.SmartGen(catalog.timestamp, catalog.length, catalog.scatter,
                                                             catalog.exp).extract()) == catalog.timestamp:
                                     catalog.expired = True
 

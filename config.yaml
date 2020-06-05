@@ -53,7 +53,7 @@ provider:
   delay: 7.5
   max_bad: 25
   test_url: http://google.com/
-  timeout: 3.0
+  timeout: 5.0
 queues:
   catalog_queue_put_wait: 8.0
   catalog_queue_size: 256
