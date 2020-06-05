@@ -3,11 +3,11 @@ from typing import Any
 
 from uctp.peer import Peer
 
-from .cache import HashStorage
 from . import codes
 from . import core
 from . import logger
 from . import storage
+from .cache import HashStorage
 
 
 class Commands:
@@ -184,21 +184,21 @@ class Commands:
             raise IndexError(f'Namespace "{namespace}" not found')
 
     def hash_storage_defrag(self, peer: Peer) -> bool:
-        self.log.info(codes.Code(21101,  f'{peer.name}: {inspect.stack()[0][3]}'))
+        self.log.info(codes.Code(21101, f'{peer.name}: {inspect.stack()[0][3]}'))
         HashStorage.defrag()
-        self.log.info(codes.Code(21102,  f'{peer.name}: {inspect.stack()[0][3]}'))
+        self.log.info(codes.Code(21102, f'{peer.name}: {inspect.stack()[0][3]}'))
         return True
 
     def hash_storage_dump(self, peer: Peer) -> bool:
-        self.log.info(codes.Code(21101,  f'{peer.name}: {inspect.stack()[0][3]}'))
+        self.log.info(codes.Code(21101, f'{peer.name}: {inspect.stack()[0][3]}'))
         HashStorage.dump()
-        self.log.info(codes.Code(21102,  f'{peer.name}: {inspect.stack()[0][3]}'))
+        self.log.info(codes.Code(21102, f'{peer.name}: {inspect.stack()[0][3]}'))
         return True
 
     def hash_storage_backup(self, peer: Peer) -> bool:
-        self.log.info(codes.Code(21101,  f'{peer.name}: {inspect.stack()[0][3]}'))
+        self.log.info(codes.Code(21101, f'{peer.name}: {inspect.stack()[0][3]}'))
         HashStorage.backup()
-        self.log.info(codes.Code(21102,  f'{peer.name}: {inspect.stack()[0][3]}'))
+        self.log.info(codes.Code(21102, f'{peer.name}: {inspect.stack()[0][3]}'))
         return True
 
     def log_file_reset(self, peer: Peer) -> bool:
@@ -209,7 +209,7 @@ class Commands:
         return True
 
     def proxy(self, peer: Peer, url: str) -> dict:
-        self.log.info(codes.Code(21103,  f'{peer.name}: {inspect.stack()[0][3]}'))
+        self.log.info(codes.Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))
         return core.provider.proxies[url].export()
 
     def proxies(self, peer: Peer) -> list:

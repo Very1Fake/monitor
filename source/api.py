@@ -2,12 +2,11 @@ import abc
 import hashlib
 from dataclasses import dataclass, field
 from types import GeneratorType
-from typing import TypeVar, List, Any, Union, Dict, Generator
+from typing import TypeVar, List, Union, Dict, Generator
 
 from . import codes
 from . import logger
 from .library import Interval, Scheduled, Smart, SubProvider
-
 
 # Constants
 
@@ -27,7 +26,6 @@ CURRENCIES = {
     'GBP': 1,
     '': 0
 }
-
 
 SIZE_TYPES = {
     'P-W-W': 14,

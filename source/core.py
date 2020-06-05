@@ -17,8 +17,8 @@ from . import logger
 from . import scripts
 from . import storage
 from . import tools
-from .library import PrioritizedItem, UniqueSchedule, Provider
 from .cache import HashStorage
+from .library import PrioritizedItem, UniqueSchedule, Provider
 
 
 # TODO: throw() for state setters

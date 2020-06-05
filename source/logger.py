@@ -7,12 +7,11 @@ from typing import Union
 from termcolor import colored
 
 from . import codes
-from . import tools
 from . import storage
+from . import tools
 
 print_lock: threading.Lock = threading.Lock()
 write_lock: threading.Lock = threading.Lock()
-
 
 file: io.TextIOWrapper = None
 
