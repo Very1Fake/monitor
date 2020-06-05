@@ -3,7 +3,7 @@ import os
 import time
 from datetime import datetime
 
-from core import storage, core, __version__
+from . import storage, core, __version__
 
 
 class Analytics:
@@ -63,8 +63,8 @@ class Analytics:
     def info_index_worker(id_: int) -> dict:
         if isinstance(id_, int):
             with core.monitor.thread_manager.lock:
-                if id_ in core.monitor.thread_manager.index_workers:
-                    worker = core.monitor.thread_manager.index_workers[id_]
+                if id_ in core.monitor.thread_manager.catalog_workers:
+                    worker = core.monitor.thread_manager.catalog_workers[id_]
                     return {
                         'id': worker.id,
                         'name': worker.name,

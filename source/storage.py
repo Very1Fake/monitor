@@ -18,20 +18,18 @@ def config_check() -> None:
             different = False
             snapshot_: dict = snapshot()
             for k, v in snapshot_.items():
-                if k not in conf or not isinstance(v, type(conf[k])):
+                if k not in conf or not isinstance(conf[k], type(v)):
                     different = True
-                    conf[k] = snapshot_[k]
-                else:
-                    if isinstance(snapshot_[k], dict):
-                        for i in snapshot_[k]:
-                            if i not in conf[k]:
-                                different = True
-                                conf[k][i] = snapshot_[k][i]
-            if not different:
-                return
-        yaml.safe_dump(snapshot(), open('./config.yaml', 'w+'))
-    else:
-        yaml.safe_dump(snapshot(), open('./config.yaml', 'w+'))
+                    conf[k] = v
+                elif isinstance(snapshot_[k], dict):
+                    for k2, v2 in snapshot_[k].items():
+                        if k2 not in conf[k] or not isinstance(conf[k][k2], type(v2)):
+                            different = True
+                            conf[k][k2] = v2
+            if different:
+                yaml.safe_dump(conf, open('./config.yaml', 'w+'))
+            return
+    yaml.safe_dump(snapshot(), open('./config.yaml', 'w+'))
 
 
 def config_load() -> None:
@@ -44,14 +42,18 @@ def config_load() -> None:
 
 
 def config_dump() -> None:
-    config_check()
     yaml.safe_dump(snapshot(), open('./config.yaml', 'w+'))
 
 
 class Main(NamedTuple):
     production: bool = False  # If True monitor will try to avoid fatal errors as possible
     logs_path: str = 'logs'
-    cache_path: str = 'cache'
+
+
+class Cache(NamedTuple):
+    path: str = 'cache'
+    item_time: int = 1209600
+    target_time: int = 604800  # How long save hashes of success & failed targets
 
 
 class Analytics(NamedTuple):
@@ -69,7 +71,6 @@ class ThreadManager(NamedTuple):
 class Pipe(NamedTuple):
     tick: float = .5  # Delta time for queue manage (in seconds)
     wait: float = 10.  # Timeout to join() when turning off monitor (in seconds)
-    success_hashes_time: int = 172800  # How long save hashes of success targets
 
 
 class Worker(NamedTuple):
@@ -78,15 +79,15 @@ class Worker(NamedTuple):
     wait: float = 5.
 
 
-class IndexWorker(NamedTuple):
+class CatalogWorker(NamedTuple):
     count: int = 5
     tick: float = 1.
     wait: int = 7
 
 
 class Queues(NamedTuple):
-    index_queue_size: int = 256  # Size for index_queue (will be waiting if full)
-    index_queue_put_wait: float = 8.
+    catalog_queue_size: int = 256  # Size for catalog_queue (will be waiting if full)
+    catalog_queue_put_wait: float = 8.
     target_queue_size: int = 512  # Size for target_queue (will be waiting if full)
     target_queue_put_wait: float = 8.
 
@@ -98,52 +99,69 @@ class Logger(NamedTuple):
     message_content: int = 1  # (0 - Only code, 1 - Code & Message, 2 - Code & Title & Message
 
 
-class API(NamedTuple):
-    priority_IOnce: int = 10
-    priority_IInterval: int = 50
-    priority_TSmart: list = [10, 0]
-    priority_TScheduled: list = [50, 0]
-    priority_TInterval: list = [100, 100]  # First value is base priority, second value is range (0 for static priority)
-    priority_interval_default: int = 100
-    priority_target_default: int = 1001
+class Priority(NamedTuple):
+    CSmart: int = 10
+    CScheduled: int = 50
+    CInterval: int = 100
+    TSmart: list = [10, 0]
+    TScheduled: list = [50, 0]
+    TInterval: list = [100, 100]  # First value is base priority, second value is range (0 for static priority)
+    RTSmart: list = [10, 0]
+    RTScheduled: list = [50, 0]
+    RTInterval: list = [100, 100]  # First value is base priority, second value is range (0 for static priority)
+    catalog_default: int = 100
+    target_default: int = 1001
+
+
+class Provider(NamedTuple):
+    delay: float = 7.5
+    max_bad: int = 25
+    timeout: float = 3.
+    test_url: str = 'http://google.com/'
+
+
+class EventHandler(NamedTuple):
+    tick: float = .1
+    wait: float = 3.
 
 
 categories: tuple = (
     'main',
+    'cache',
     'analytics',
     'thread_manager',
     'pipe',
     'worker',
-    'index_worker',
+    'catalog_worker',
     'queues',
     'logger',
-    'api'
+    'priority',
+    'provider',
+    'event_handler'
 )
 
 # Global variables
 main: Main = Main()
+cache: Cache = Cache()
 analytics: Analytics = Analytics()
 thread_manager: ThreadManager = ThreadManager()
 pipe: Pipe = Pipe()
 worker: Worker = Worker()
-index_worker: IndexWorker = IndexWorker()
+catalog_worker: CatalogWorker = CatalogWorker()
 queues: Queues = Queues()
 logger: Logger = Logger()
-api: API = API()
+priority: Priority = Priority()
+provider: Provider = Provider()
+event_handler: EventHandler = EventHandler()
 
 
 def snapshot() -> dict:
     snapshot_: dict = {}
     for k, v in globals().items():
-        if not k.startswith('__') and not k.startswith('_') and \
-                k not in ('categories', 'config_check', 'config_load', 'config_dump', 'snapshot', 'os', 'yaml') and \
-                not k[0].isupper():
-            if _is_namedtuple(v):
-                snapshot_[k] = v._asdict()
-            else:
-                snapshot_[k] = v
+        if k in categories:
+            snapshot_[k] = v._asdict()
     return snapshot_
 
 
-if __name__ == 'core.storage':
+if __name__ == 'storage.storage':
     config_check()

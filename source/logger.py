@@ -1,3 +1,4 @@
+import io
 import os
 import threading
 import traceback
@@ -6,16 +7,13 @@ from typing import Union
 from termcolor import colored
 
 from . import codes
-from . import library as lib
 from . import storage
+from . import tools
 
-_print_lock: threading.Lock = threading.Lock()
-_write_lock: threading.Lock = threading.Lock()
+print_lock: threading.Lock = threading.Lock()
+write_lock: threading.Lock = threading.Lock()
 
-if storage.logger.mode == 2 or storage.logger.mode == 3:
-    if not os.path.isdir(storage.main.logs_path):
-        os.makedirs(storage.main.logs_path)
-    log_file = open(f'{storage.main.logs_path}/{lib.get_time(storage.logger.utc_time)}.log', 'w+')
+file: io.TextIOWrapper = None
 
 
 class LoggerError(Exception):
@@ -43,19 +41,28 @@ class Logger:
             return msg
 
     def print(self, type_: int, msg: Union[str, codes.Code], parent: str = '') -> None:
-        with _print_lock:
+        with print_lock:
             print(
-                f"[{lib.get_time(storage.logger.utc_time)}] [{colored(*self.types[type_])}] "
+                f"[{tools.get_time(storage.logger.utc_time)}] [{colored(*self.types[type_])}] "
                 f"[{f'{parent}>' if parent else ''}{self.name}]: {self.format_msg(msg)}"
             )
 
     def write(self, type_: int, msg: Union[str, codes.Code], parent: str = '') -> None:
-        with _write_lock:
-            log_file.write(
-                f"[{lib.get_time(storage.logger.utc_time)}] [{self.types[type_][0]}] "
-                f"[{f'{parent}>' if parent else ''}{self.name}]: {self.format_msg(msg)}\n"
-            )
-            log_file.flush()
+        with write_lock:
+            global file
+            try:
+                if not os.path.isfile(file.name):
+                    raise NameError
+            except (NameError, AttributeError):
+                if not os.path.isdir(storage.main.logs_path):
+                    os.makedirs(storage.main.logs_path)
+                file = open(f'{storage.main.logs_path}/{tools.get_time(storage.logger.utc_time, True)}.log', 'w+')
+            finally:
+                file.write(
+                    f"[{tools.get_time(storage.logger.utc_time)}] [{self.types[type_][0]}] "
+                    f"[{f'{parent}>' if parent else ''}{self.name}]: {self.format_msg(msg)}\n"
+                )
+                file.flush()
 
     def test(self, msg: Union[str, codes.Code], parent: str = '') -> bool:
         if storage.logger.level >= 5:
@@ -104,36 +111,34 @@ class Logger:
 
     def fatal_msg(self, msg: Union[str, codes.Code], traceback_: str = '', parent: str = '') -> bool:
         if storage.logger.mode == 1 or storage.logger.mode == 3:
-            with _print_lock:
+            with print_lock:
                 print(colored(
-                    f"[{lib.get_time(storage.logger.utc_time)}] [FATAL] [{f'{parent}>' if parent else ''}{self.name}]: "
-                    f"{self.format_msg(msg)}",
+                    f'[{tools.get_time(storage.logger.utc_time)}] [FATAL] '
+                    f'[{f"{parent}>" if parent else ""}{self.name}]: {self.format_msg(msg)}',
                     'red',
                     attrs=['reverse']
                 ) + f"\n{'=' * 32}\n{traceback_}\n{'=' * 32}" if traceback_ else '')
         if storage.logger.mode == 2 or storage.logger.mode == 3:
-            with _write_lock:
-                self.write(0, self.format_msg(msg) + f"\n{'=' * 32}\n{traceback_}\n{'=' * 32}" if traceback_ else '',
-                           parent)
+            self.write(0, self.format_msg(msg) + f"\n{'=' * 32}\n{traceback_}\n{'=' * 32}" if traceback_ else '',
+                       parent)
         return True
 
     def fatal(self, e: Exception, from_: Exception = None, parent: str = ''):
         if storage.logger.mode == 1 or storage.logger.mode == 3:
-            with _print_lock:
+            with print_lock:
                 print(colored(
-                    f"[{lib.get_time(storage.logger.utc_time)}] [FATAL] [{f'{parent}>' if parent else ''}{self.name}]: "
-                    f"{e.__class__.__name__}: {e.__str__()}",
+                    f'[{tools.get_time(storage.logger.utc_time)}] [FATAL] '
+                    f'[{f"{parent}>" if parent else ""}{self.name}]: '
+                    f"{e.__class__.__name__}: {str(e)}",
                     'red',
                     attrs=['reverse']
                 ) + f"\n{'=' * 32}\n{traceback.format_exc()}\n{'=' * 32}")
         if storage.logger.mode == 2 or storage.logger.mode == 3:
-            with _write_lock:
-                self.write(
-                    0,
-                    f"{e.__class__.__name__}: {e.__str__()}\n{'=' * 32}\n{traceback.format_exc()}\n{'=' * 32}",
-                    parent
-                )
-                log_file.flush()
+            self.write(
+                0,
+                f"{e.__class__.__name__}: {str(e)}\n{'=' * 32}\n{traceback.format_exc()}\n{'=' * 32}",
+                parent
+            )
         if from_:
             raise e from from_
         else:
