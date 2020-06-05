@@ -5,9 +5,9 @@ import threading
 import time
 from typing import Union
 
-from .api import Size, Sizes, Item, ItemType
 from . import storage
 from . import tools
+from .api import Size, Sizes, Item, ItemType
 
 
 class UniquenessError(Exception):

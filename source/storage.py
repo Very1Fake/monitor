@@ -121,7 +121,7 @@ class Provider(NamedTuple):
 
 
 class EventHandler(NamedTuple):
-    tick: float = .5
+    tick: float = .1
     wait: float = 3.
 
 
