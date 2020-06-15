@@ -243,3 +243,14 @@ CREATE TABLE IF NOT EXISTS Sizes (item INTEGER PRIMARY KEY NOT NULL REFERENCES R
                 return Sizes(sizes[0], (Size(*i) for i in json.loads(sizes[1])))
             else:
                 raise IndexError(f'Sizes for this item ({id_}) not found')
+
+    @classmethod
+    def stats(cls) -> dict:
+        return dict(zip(
+            ('targets', 'announced_items', 'items', 'restock_items', 'sizes'),
+            sqlite3.connect('cache/hash.db').execute('SELECT (SELECT COUNT(hash) FROM Targets),'
+                                                     '(SELECT COUNT(hash) FROM AnnouncedItems),'
+                                                     '(SELECT COUNT(id) FROM Items),'
+                                                     '(SELECT COUNT(id) FROM RestockItems),'
+                                                     '(SELECT COUNT(item) FROM Sizes)').fetchone())
+        )

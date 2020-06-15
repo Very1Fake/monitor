@@ -260,7 +260,11 @@ class ScriptIndex:
             raise TypeError('name must be str')
 
     def get_script(self, name: str) -> dict:
-        return next(i for i in self.index if i['name'] == name)
+        for i in self.index:
+            if i['name'] == name:
+                return i
+        else:
+            raise IndexError(f'Script {name}" not found')
 
 
 class EventHandler:
