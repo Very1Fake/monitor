@@ -31,7 +31,6 @@ def check() -> None:
 
 
 class HashStorage:
-
     __db: sqlite3.Connection = sqlite3.connect(':memory:', 1, check_same_thread=False)
     __db.execute('PRAGMA foreign_keys = ON')
 
