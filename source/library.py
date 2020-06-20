@@ -60,6 +60,11 @@ class Schedule(dict):
         else:
             super().__delitem__(time_)
 
+    def __contains__(self, time_) -> bool:
+        if isinstance(time_, float):
+            time_ = round(time_, 7)
+        return super().__contains__(time_)
+
     def pop_time(self, time_: Union[float, int, slice]) -> List[Any]:
         items = list(self.__getitem__(time_))
         del self[time_]

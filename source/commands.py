@@ -29,6 +29,7 @@ class Commands:
         core.server.commands.add_(self.hash_storage_defrag)
         core.server.commands.add_(self.hash_storage_dump)
         core.server.commands.add_(self.hash_storage_backup)
+        core.server.commands.add_(self.hash_storage_stats)
         core.server.commands.add_(self.log_file_reset)
         core.server.commands.add_(self.proxy)
         core.server.commands.add_(self.proxies)
@@ -77,6 +78,7 @@ class Commands:
         core.server.commands.alias('hs-defrag', 'hash_storage_defrag')
         core.server.commands.alias('hs-dump', 'hash_storage_dump')
         core.server.commands.alias('hs-backup', 'hash_storage_backup')
+        core.server.commands.alias('hs-stats', 'hash_storage_stats')
         core.server.commands.alias('l-file-reset', 'log_file_reset')
         core.server.commands.alias('p-dump', 'proxy_dump')
         core.server.commands.alias('p-load', 'proxy_load')
@@ -200,6 +202,10 @@ class Commands:
         HashStorage.backup()
         self.log.info(codes.Code(21102, f'{peer.name}: {inspect.stack()[0][3]}'))
         return True
+
+    def hash_storage_stats(self, peer: Peer) -> dict:
+        self.log.info(codes.Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))
+        return HashStorage.stats()
 
     def log_file_reset(self, peer: Peer) -> bool:
         self.log.info(codes.Code(21101, f'{peer.name}: {inspect.stack()[0][3]}'))
