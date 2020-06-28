@@ -4,7 +4,7 @@
 
 """
 
-import json
+import ujson
 import os
 import sqlite3
 import threading
@@ -265,7 +265,7 @@ type INTEGER NOT NULL, list TEXT NOT NULL);''')
                     c.execute(f'INSERT INTO RestockItems VALUES ({id_})')
                     c.execute(
                         f'INSERT INTO Sizes VALUES ({id_}, ?, ?)',
-                        (item.sizes.type, json.dumps(item.sizes.export(), separators=(',', ':')))
+                        (item.sizes.type, ujson.dumps(item.sizes.export(), separators=(',', ':')))
                     )
                 return id_
             except sqlite3.IntegrityError as e:
@@ -273,6 +273,30 @@ type INTEGER NOT NULL, list TEXT NOT NULL);''')
                     raise UniquenessError
                 else:
                     raise e
+
+    @classmethod
+    def remove_item(cls, hash_: bytes) -> None:
+        """Remove :class:`source.api.IRelease` hash from database
+
+        Note:
+            Works only for :class:`source.api.IRelease`!!!
+
+        Args:
+            hash_: Item hash
+
+        Returns:
+            None
+
+        Raises:
+            TypeError: If ``hash_`` type not bytes
+        """
+        if not isinstance(hash_, bytes):
+            raise TypeError('hash_ must be bytes')
+
+        with cls._lock, cls.__db as c:
+            cls.check()
+
+            c.execute('DELETE FROM Items WHERE hash=?', (hash_,))
 
     @classmethod
     def check_item(cls, hash_: bytes, announced: bool = False) -> bool:
@@ -360,7 +384,7 @@ type INTEGER NOT NULL, list TEXT NOT NULL);''')
             if c.execute(f'SELECT item FROM sizes WHERE item={id_}').fetchone():
                 c.execute(
                     f'UPDATE sizes SET type=?, list=? WHERE item={id_}',
-                    (sizes.type, json.dumps(sizes.export(), separators=(',', ':')))
+                    (sizes.type, ujson.dumps(sizes.export(), separators=(',', ':')))
                 )
             else:
                 raise IndexError(f'Sizes for this item ({id_}) not found')
@@ -386,7 +410,7 @@ type INTEGER NOT NULL, list TEXT NOT NULL);''')
             cls.check()
 
             if sizes := c.execute(f'SELECT type, list FROM sizes WHERE item={id_}').fetchone():
-                return Sizes(sizes[0], (Size(*i) for i in json.loads(sizes[1])))
+                return Sizes(sizes[0], (Size(*i) for i in ujson.loads(sizes[1])))
             else:
                 raise IndexError(f'Sizes for this item ({id_}) not found')
 
@@ -408,11 +432,12 @@ type INTEGER NOT NULL, list TEXT NOT NULL);''')
                 }
         """
 
-        return dict(zip(
-            ('targets', 'announced_items', 'items', 'restock_items', 'sizes'),
-            sqlite3.connect('cache/hash.db').execute('SELECT (SELECT COUNT(hash) FROM Targets),'
-                                                     '(SELECT COUNT(hash) FROM AnnouncedItems),'
-                                                     '(SELECT COUNT(id) FROM Items),'
-                                                     '(SELECT COUNT(id) FROM RestockItems),'
-                                                     '(SELECT COUNT(item) FROM Sizes)').fetchone())
-        )
+        with cls._lock, cls.__db as c:
+            cls.check()
+
+            return dict(zip(
+                ('targets', 'announced_items', 'items', 'restock_items', 'sizes'),
+                c.execute('SELECT (SELECT COUNT(hash) FROM Targets), (SELECT COUNT(hash) FROM AnnouncedItems),'
+                          '(SELECT COUNT(id) FROM Items), (SELECT COUNT(id) FROM RestockItems),'
+                          '(SELECT COUNT(item) FROM Sizes)').fetchone())
+            )

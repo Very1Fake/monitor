@@ -8,7 +8,7 @@ cache:
   path: cache
   target_time: 604800
 catalog_worker:
-  count: 5
+  count: 12
   tick: 1.0
   wait: 7
 event_handler:
@@ -63,6 +63,6 @@ thread_manager:
   lock_ticks: 16
   tick: 1.0
 worker:
-  count: 5
+  count: 7
   tick: 1.0
   wait: 5.0

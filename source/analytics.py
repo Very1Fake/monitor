@@ -1,4 +1,4 @@
-import json
+import ujson
 import os
 import time
 from datetime import datetime
@@ -114,7 +114,7 @@ class Analytics:
         elif type_ == 2:
             suffix = 'final_'
 
-        json.dump(self.snapshot(type_), open(
+        ujson.dump(self.snapshot(type_), open(
             storage.analytics.path + f'/report_{suffix}'
                                      f'{datetime.utcnow().strftime("%Y-%m-%d_%H:%M:%S")}.json',
             'w+'

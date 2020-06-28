@@ -264,26 +264,25 @@ class Provider(ProviderCore):
             raise KeyError('Proxy with this url not specified')
 
 
-class SubProvider(ProviderCore):  # TODO: SubProvider global mode switcher
-    pos: int = 0
-
+class SubProvider(ProviderCore):
     _log: logger.Logger
     _script: str
+    pos: int
 
     def __init__(self, script: str):
         self._log = logger.Logger('SPR')
         self._script = script
+        self.pos = 0
 
-    @classmethod
-    def _proxy(cls) -> Proxy:
-        valid = [k for k, v in cls._proxies.items() if v.bad < storage.provider.max_bad]
+    def _proxy(self) -> Proxy:
+        valid = [k for k, v in self._proxies.items() if v.bad < storage.provider.max_bad]
 
         if valid:
-            if cls.pos >= len(valid) - 1:
-                cls.pos = 0
+            if self.pos >= len(valid) - 1:
+                self.pos = 0
             else:
-                cls.pos += 1
-            return cls._proxies[valid[cls.pos]]
+                self.pos += 1
+            return self._proxies[valid[self.pos]]
         else:
             return Proxy('')
 
