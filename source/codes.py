@@ -143,7 +143,9 @@ _codes: Dict[int, str] = {
     # Provider (312xx)
     31201: 'Proxy added',
     31202: 'Proxy removed',
-    31203: 'Proxies loaded',
+    31203: 'Proxies list changed',
+    31204: 'Proxies statistics reset',
+    31205: 'Proxies list cleared',
 
     # SubProvider (313xx)
     31301: 'Request connection error',

@@ -5,7 +5,7 @@ reports/
 
 *.pem
 authority.yaml
-proxy.yaml
+proxy.json
 
 ### Idea
 .idea/

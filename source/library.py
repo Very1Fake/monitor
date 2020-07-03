@@ -1,14 +1,20 @@
+import collections
 import os
+import threading
+import time
 from dataclasses import dataclass, field
-from typing import Any, List, Dict, Union
+from typing import Any, List, Dict, Union, Tuple
 
+import ujson
 import cfscrape
 import requests
-import yaml
 
 from . import codes
 from . import logger
 from . import storage
+
+
+# TODO: Add export/import of Proxy.bad
 
 
 # Exception classes
@@ -157,26 +163,70 @@ class Smart:
 
 @dataclass
 class Proxy:
-    url: str
-    bad: int = field(init=False, default=0)
+    address: str = None
+    login: str = None
+    password: str = None
+    bad: int = field(compare=False, default=0)
+    _stats: collections.deque = field(compare=False, init=False, default_factory=lambda: collections.deque(maxlen=30))
 
-    def export(self) -> dict:
-        return {'url': self.url, 'bad': self.bad}
+    def __post_init__(self):
+        if self.address:
+            if isinstance(self.address, str):
+                pass
+            else:
+                raise TypeError('address must be string')
+
+        if self.login:
+            if isinstance(self.login, str):
+                if self.password:
+                    if not isinstance(self.password, str):
+                        raise TypeError(f'password must be string ({self.address})')
+                else:
+                    raise ProxyError(f'If login is specified, password must be specified too ({self.address})')
+            else:
+                raise TypeError(f'login must be string ({self.address})')
+
+        if not isinstance(self.bad, int):
+            raise TypeError(f'bad must be int ({self.address})')
+
+    @property
+    def stats(self) -> list:
+        return list(self._stats)
+
+    @stats.setter
+    def stats(self, elapsed: Union[float, int]) -> None:
+        self._stats.appendleft(round(elapsed, 5))
 
     def use(self) -> Dict[str, str]:
-        if self.url:
-            return {'http': f'http://{self.url}/', 'https': f'https://{self.url}/'}
+        if self.address:
+            return {
+                'http': f'http://{f"{self.login}:{self.password}@" if self.login else ""}{self.address}/',
+                'https': f'https://{f"{self.login}:{self.password}@" if self.login else ""}{self.address}/'
+            }
         else:
             return {}
 
+    def export(self) -> dict:
+        return {
+            'address': self.address,
+            'login': self.login,
+            'password': self.password,
+            'bad': self.bad,
+            'stats': self.stats
+        }
+
     def __str__(self) -> str:
-        return f'Proxy({self.url}, bad={self.bad})'
+        return f'Proxy({self.address}{f", l={self.login}" if self.login else ""}, bad={self.bad})'
+
+    def __repr__(self) -> str:
+        return f'{f"{self.login}:{self.password}@" if self.login else ""}{self.address}'
 
 
 # Storage classes
 
 
 class ProviderCore:
+    lock: threading.RLock = threading.RLock()
     _proxies: Dict[str, Proxy] = {}
 
 
@@ -194,74 +244,139 @@ class Provider(ProviderCore):
     def proxies(self) -> Dict[str, Proxy]:
         return self._proxies
 
-    def _test(self, url: str, force: bool = False) -> bool:
+    def proxy_test(self, proxy: Proxy, force: bool = False) -> bool:
         try:
-            self.log.info(codes.Code(21202, url))
-            if (code := requests.get(storage.provider.test_url, proxies=Proxy(url).use(),
+            self.log.info(codes.Code(21202, repr(proxy)))
+            if (code := requests.get(storage.provider.test_url, proxies=proxy.use(),
                                      timeout=storage.provider.timeout).status_code) != 200:
-                self.log.info(codes.Code(41202, url))
+                self.log.info(codes.Code(41202, repr(proxy)))
                 if force:
                     return False
                 else:
                     raise ProviderError(f'Bad proxy ({code})')
         except (requests.ConnectionError, requests.Timeout):
-            self.log.info(codes.Code(41202, url))
+            self.log.info(codes.Code(41202, repr(proxy)))
             if force:
                 return False
             else:
                 raise ProviderError(f'Proxy not available or too slow (timeout: {storage.provider.timeout})')
-        self.log.info(codes.Code(21203, url))
+        self.log.info(codes.Code(21203, repr(proxy)))
         return True
 
     @staticmethod
-    def proxy_check() -> None:
-        temp = yaml.safe_load(open('proxy.yaml', 'r' if os.path.isfile('proxy.yaml') else 'w+'))
-        if not isinstance(temp, list):
-            if temp:
-                raise TypeError('Bad proxy.yaml')
-            else:
-                yaml.safe_dump([], open('proxy.yaml', 'w+'))
+    def proxy_file_check(path: str) -> None:
+        if os.path.isfile(path):
+            file = open('proxy.json', 'r' if os.path.isfile('proxy.json') else 'w+').read()
 
-    def proxy_dump(self) -> None:
-        yaml.safe_dump([i.url for i in self._proxies.values()], open('proxy.yaml', 'w+'))
+            if file:
+                try:
+                    if isinstance(file := ujson.loads(file), dict):
+                        for k, v in file.items():
+                            if not isinstance(k, str):
+                                raise TypeError(f'Proxy address must be string ({k})')
+
+                            if isinstance(v, dict):
+                                if 'login' in v:
+                                    if isinstance(v['login'], str):
+                                        if 'password' in v:
+                                            if not isinstance(v['password'], str):
+                                                raise TypeError(f'Proxy password must be string ({k})')
+                                        else:
+                                            raise IndexError(
+                                                f'If proxy password specified, password must be specified too ({k})')
+                                    else:
+                                        raise TypeError(f'Proxy login must be string ({k})')
+                            else:
+                                raise TypeError(f'Proxy content must be object')
+                    else:
+                        raise TypeError('Bad proxy file (proxy file must be object)')
+                except ValueError:
+                    raise SyntaxError('Non JSON file')
+            else:
+                ujson.dump({}, open(path, 'w+'), indent=4)
+        else:
+            if path == 'proxy.json':
+                ujson.dump({}, open(path, 'w+'), indent=4)
+            else:
+                raise FileNotFoundError(path)
+
+    def proxy_dump(self, path: str = '') -> None:
+        with open(path if path else 'proxy.yaml', 'w+') as f:
+            proxies = {}
+
+            for i in self._proxies.values():
+                proxies[i.address] = {}
+
+                if i.login:
+                    proxies[i.address] = {'login': i.login, 'password': i.password}
+
+            ujson.dump(proxies, f, indent=4)
+
         self.log.info(codes.Code(21201))
 
-    def proxy_load(self) -> None:
-        self.proxy_check()
-        self._proxies.clear()
+    def proxy_load(self, path: str = None) -> Tuple[int, int, int]:
+        if not path:
+            path = 'proxy.json'
 
-        proxy = yaml.safe_load(open('proxy.yaml'))
-        count = 0
-        for i in proxy:
-            if isinstance(i, str):
-                if i in self._proxies:
-                    continue
+        self.proxy_file_check(path)
 
-                if self._test(i, True):
-                    self._proxies[i] = Proxy(i)
-                    count += 1
-                else:
-                    self.log.error(codes.Code(41201, i))
-        if count:
-            self.log.warn(codes.Code(31203, str(count)))
+        proxy = ujson.load(open(path))
+        edited, new = 0, 0
 
-    def proxy_add(self, url: str) -> None:
-        if not isinstance(url, str):
-            raise TypeError('url must be str')
-        else:
-            if url in self._proxies:
-                raise KeyError('Proxy with this url already specified')
+        for k, v in proxy.items():
+            if 'login' in v:
+                p = Proxy(k, v['login'], v['password'])
             else:
-                if self._test(url):
-                    self._proxies[url] = Proxy(url)
-                    self.log.warn(codes.Code(31201))
+                p = Proxy(k)
 
-    def proxy_remove(self, url: str) -> None:
-        if url in self._proxies:
-            del self._proxies[url]
+            if k in self._proxies and self._proxies[k] != p:
+                continue
+
+            if self.proxy_test(p, True):
+                with self.lock:
+                    self._proxies[k] = p
+                if k in self._proxies:
+                    edited += 1
+                else:
+                    new += 1
+            else:
+                self.log.error(codes.Code(41201, repr(p)))
+
+        if edited or new:
+            self.log.warn(codes.Code(31203, str([edited, new])))
+
+        return len(self._proxies), edited, new
+
+    def proxy_add(self, address: str, login: str = None, password: str = None) -> bool:
+        if address in self._proxies:
+            raise KeyError('Proxy with this address already specified')
+        else:
+            if self.proxy_test(p := Proxy(address, login, password)):
+                with self.lock:
+                    self._proxies[address] = p
+                self.log.warn(codes.Code(31201))
+                return True
+            else:
+                return False
+
+    def proxy_remove(self, address: str) -> None:
+        if address in self._proxies:
+            with self.lock:
+                del self._proxies[address]
             self.log.warn(codes.Code(31202))
         else:
-            raise KeyError('Proxy with this url not specified')
+            raise KeyError('Proxy with this address not specified')
+
+    def proxy_reset(self):
+        with self.lock:
+            for i in self._proxies.values():
+                i.bad = 0
+        self.log.warn(codes.Code(31204))
+
+    def proxy_clear(self):
+        with self.lock:
+            self._proxies.clear()
+        self.log.warn(codes.Code(31205))
 
 
 class SubProvider(ProviderCore):
@@ -275,31 +390,19 @@ class SubProvider(ProviderCore):
         self.pos = 0
 
     def _proxy(self) -> Proxy:
-        valid = [k for k, v in self._proxies.items() if v.bad < storage.provider.max_bad]
+        with self.lock:
+            valid = [k for k, v in self._proxies.items() if v.bad < storage.provider.max_bad]
 
-        if valid:
-            if self.pos >= len(valid) - 1:
-                self.pos = 0
+            if valid:
+                if self.pos >= len(valid) - 1:
+                    self.pos = 0
+                else:
+                    self.pos += 1
+                return self._proxies[valid[self.pos]]
             else:
-                self.pos += 1
-            return self._proxies[valid[self.pos]]
-        else:
-            return Proxy('')
+                return Proxy('')
 
-    def _get(self, func, *args, **kwargs):
-        try:
-            return func.get(*args, **kwargs)
-        except requests.exceptions.ProxyError:
-            raise ProxyError
-        except Exception as e:
-            if isinstance(e, requests.ConnectionError):
-                self._log.warn(codes.Code(31301), self._script)
-            elif isinstance(e, requests.Timeout):
-                self._log.warn(codes.Code(31302, str(kwargs['timeout'])), self._script)
-
-            raise SubProviderError
-
-    def get(
+    def request(
             self,
             url: str,
             mode: int = 0,
@@ -310,7 +413,7 @@ class SubProvider(ProviderCore):
             headers: Dict[str, str] = None,
             cookies: Dict[str, Any] = None,
             **kwargs
-    ) -> str:
+    ) -> requests.Response:
         if not isinstance(url, str):
             raise TypeError('url must be str')
         if not isinstance(mode, int):
@@ -338,44 +441,53 @@ class SubProvider(ProviderCore):
         else:
             cookies: Dict[str, Any] = {}
 
-        for i in range(5):  # Optimize (now 5-times loop if bad proxy)
-            if proxy:
-                proxy_ = self._proxy()
+        proxy_ = self._proxy() if proxy else Proxy('')
+        start = time.time()
+
+        try:
+            if mode == 0:
+                if 'type' not in kwargs:
+                    raise KeyError('type must be specified for ')
+
+                response = requests.request(
+                    kwargs['type'],
+                    url,
+                    params=params,
+                    headers=headers,
+                    cookies=cookies,
+                    proxies=proxy_.use(),
+                    timeout=timeout
+                )
+            elif mode == 1:
+                response = cfscrape.create_scraper(
+                    delay=kwargs['delay'] if 'delay' in kwargs else storage.provider.delay
+                ).request(
+                    url,
+                    params=params,
+                    headers=headers,
+                    cookies=cookies,
+                    proxies=proxy_,
+                    timeout=timeout
+                )
             else:
-                proxy_ = Proxy('')
+                raise ValueError(f'Unknown mode, {mode}')
+        except requests.exceptions.ProxyError:
+            proxy_.bad += 1
+            raise ProxyError
+        except (ValueError, KeyError) as e:
+            raise e
+        except Exception as e:
+            proxy_.bad += 1
 
-            try:
-                if mode == 0:
-                    return self._get(
-                        requests,
-                        url,
-                        params=params,
-                        headers=headers,
-                        cookies=cookies,
-                        proxies=proxy_.use(),
-                        timeout=timeout
-                    ).text
-                elif mode == 1:
-                    return self._get(
-                        cfscrape.create_scraper(delay=kwargs['delay'] if 'delay' in kwargs else storage.provider.delay),
-                        url,
-                        params=params,
-                        headers=headers,
-                        cookies=cookies,
-                        proxies=proxy_.use(),
-                        timeout=timeout
-                    ).text
-                else:
-                    raise ValueError(f'Unknown mode, {mode}')
-            except ProxyError:
-                proxy_.bad += 1
-            except SubProviderError as e:
-                proxy_.bad += 1
+            if isinstance(e, requests.ConnectionError):
+                self._log.warn(codes.Code(31301), self._script)
+            elif isinstance(e, requests.Timeout):
+                self._log.warn(codes.Code(31302, str(kwargs['timeout'])), self._script)
 
-                if proxy and proxy_.url:  # Make optimization
-                    raise type(e)(f'{e} (proxy {proxy_.url})')
-                else:
-                    raise e
+            if proxy:
+                raise type(e)(f'{e} (proxy {proxy_.address})')
+            else:
+                raise e
         else:
-            if proxy and proxy_.url:
-                raise ProxyError(proxy_.url)
+            proxy_.stats = time.time() - start
+            return response

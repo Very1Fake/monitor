@@ -18,6 +18,8 @@ class Commands:
         self.core = core
         core.server.commands.add_(self.analytics_dump)
         core.server.commands.add_(self.analytics_snapshot)
+        core.server.commands.add_(self.analytics_proxy)
+        core.server.commands.add_(self.analytics_proxies)
         core.server.commands.add_(self.analytics_worker)
         core.server.commands.add_(self.analytics_index_worker)
         core.server.commands.add_(self.config)
@@ -37,6 +39,8 @@ class Commands:
         core.server.commands.add_(self.proxy_load)
         core.server.commands.add_(self.proxy_add)
         core.server.commands.add_(self.proxy_remove)
+        core.server.commands.add_(self.proxy_reset)
+        core.server.commands.add_(self.proxy_clear)
         core.server.commands.add_(self.script)
         core.server.commands.add_(self.scripts)
         core.server.commands.add_(self.script_load)
@@ -68,6 +72,8 @@ class Commands:
 
         core.server.commands.alias('a-dump', 'analytics_dump')
         core.server.commands.alias('a-snapshot', 'analytics_snapshot')
+        core.server.commands.alias('a-proxy', 'analytics_proxy')
+        core.server.commands.alias('a-proxies', 'analytics_proxies')
         core.server.commands.alias('a-worker', 'analytics_worker')
         core.server.commands.alias('a-i-worker', 'analytics_index_worker')
         core.server.commands.alias('c-cat', 'config_categories')
@@ -84,6 +90,8 @@ class Commands:
         core.server.commands.alias('p-load', 'proxy_load')
         core.server.commands.alias('p-add', 'proxy_add')
         core.server.commands.alias('p-remove', 'proxy_remove')
+        core.server.commands.alias('p-reset', 'proxy_reset')
+        core.server.commands.alias('p-clear', 'proxy_clear')
         core.server.commands.alias('s-load', 'script_load')
         core.server.commands.alias('s-unload', 'script_unload')
         core.server.commands.alias('s-reload', 'script_reload')
@@ -119,6 +127,14 @@ class Commands:
     def analytics_snapshot(self, peer: Peer, type_: int = 1) -> dict:
         self.log.info(codes.Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))
         return core.analytic.snapshot(type_)
+
+    def analytics_proxy(self, peer: Peer, proxy: str):
+        self.log.info(codes.Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))
+        return core.analytic.proxy(proxy)
+
+    def analytics_proxies(self, peer: Peer):
+        self.log.info(codes.Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))
+        return core.analytic.proxies()
 
     def analytics_worker(self, peer: Peer, id_: int) -> dict:
         self.log.info(codes.Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))
@@ -216,32 +232,43 @@ class Commands:
 
     def proxy(self, peer: Peer, url: str) -> dict:
         self.log.info(codes.Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))
-        return core.provider.proxies[url].export()
+        with core.provider.lock:
+            return core.provider.proxies[url].export()
 
     def proxies(self, peer: Peer) -> list:
         self.log.info(codes.Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))
-        return [i.url for i in core.provider.proxies.values()]
+        with core.provider.lock:
+            return [i.address for i in core.provider.proxies.values()]
 
-    def proxy_dump(self, peer: Peer) -> bool:
-        core.provider.proxy_dump()
+    def proxy_dump(self, peer: Peer, path: str = None) -> bool:
+        self.log.info(codes.Code(21101, f'{peer.name}: {inspect.stack()[0][3]}'))
+        core.provider.proxy_dump(path)
         self.log.info(codes.Code(21102, f'{peer.name}: {inspect.stack()[0][3]}'))
         return True
 
-    def proxy_load(self, peer: Peer) -> bool:
+    def proxy_load(self, peer: Peer, path: str = None) -> list:
+        self.log.info(codes.Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))
+        return list(core.provider.proxy_load(path if path else None))
+
+    def proxy_add(self, peer: Peer, address: str, login: str = None, password: str = None) -> bool:
+        self.log.info(codes.Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))
+        return core.provider.proxy_add(address, login, password)
+
+    def proxy_remove(self, peer: Peer, address: str) -> bool:
         self.log.info(codes.Code(21101, f'{peer.name}: {inspect.stack()[0][3]}'))
-        core.provider.proxy_load()
+        core.provider.proxy_remove(address)
         self.log.info(codes.Code(21102, f'{peer.name}: {inspect.stack()[0][3]}'))
         return True
 
-    def proxy_add(self, peer: Peer, url: str) -> bool:
+    def proxy_reset(self, peer: Peer) -> bool:
         self.log.info(codes.Code(21101, f'{peer.name}: {inspect.stack()[0][3]}'))
-        core.provider.proxy_add(url)
+        core.provider.proxy_reset()
         self.log.info(codes.Code(21102, f'{peer.name}: {inspect.stack()[0][3]}'))
         return True
 
-    def proxy_remove(self, peer: Peer, url: str) -> bool:
+    def proxy_clear(self, peer: Peer) -> bool:
         self.log.info(codes.Code(21101, f'{peer.name}: {inspect.stack()[0][3]}'))
-        core.provider.proxy_remove(url)
+        core.provider.proxy_clear()
         self.log.info(codes.Code(21102, f'{peer.name}: {inspect.stack()[0][3]}'))
         return True
 
