@@ -146,8 +146,7 @@ class Resolver:
                             if catalog.expired:
                                 cls._log.warn(codes.Code(30911, str(catalog)))
                             else:
-                                if (time_ := tools.SmartGen(catalog.timestamp, catalog.length, catalog.scatter,
-                                                            catalog.exp).extract()) == catalog.timestamp:
+                                if (time_ := catalog.gen.extract()) == catalog.gen.time:
                                     catalog.expired = True
 
                                 for i in range(100):  # TODO: Optimize
@@ -180,8 +179,7 @@ class Resolver:
                         if target.expired:
                             cls._log.warn(codes.Code(30912, str(target)))
                         else:
-                            if (time_ := tools.SmartGen(target.timestamp, target.length,
-                                                        target.scatter, target.exp).extract()) == target.timestamp:
+                            if (time_ := target.gen.extract()) == target.gen.time:
                                 target.expired = True
 
                             for i in range(100):  # TODO: Optimize
@@ -800,7 +798,7 @@ class Core:
 
             self.thread_manager.join(self.thread_manager.close())  # Stop pipeline and wait
 
-            provider.proxy_dump()  # Save proxies to ./proxy.yaml
+            provider.proxy_dump()  # Save proxies to ./proxy.json
             analytic.dump(2)  # Create stop report
 
             script_manager.event_handler.monitor_stopped()

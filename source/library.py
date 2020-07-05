@@ -9,6 +9,7 @@ import ujson
 import cfscrape
 import requests
 
+from . import tools
 from . import codes
 from . import logger
 from . import storage
@@ -127,36 +128,12 @@ class Scheduled:
 
 @dataclass
 class Smart:
-    timestamp: float = field(compare=False)
-    length: int = field(compare=False)
-    scatter: int = field(compare=False, default=1)
-    exp: float = field(compare=False, default=2.)
+    gen: tools.SmartGenType = field(compare=False, repr=False)
     expired: bool = field(init=False)
 
     def __post_init__(self):
-        if not isinstance(self.timestamp, float):
-            if isinstance(self.timestamp, int):
-                self.timestamp = float(self.timestamp)
-            else:
-                raise TypeError('timestamp must be float')
-
-        if isinstance(self.length, int):
-            if self.length < 0:
-                raise ValueError('length cannot be less than 0')
-        else:
-            raise TypeError('length must be int')
-
-        if isinstance(self.scatter, int):
-            if self.scatter < 1:
-                raise ValueError('scatter cannot be less than 1')
-        else:
-            raise TypeError('scatter must be int')
-
-        if isinstance(self.exp, float):
-            if self.exp <= 1:
-                raise ValueError('exp cannot be more than 1')
-        else:
-            raise TypeError('exp must be float')
+        if not issubclass(type(self.gen), tools.SmartGen):
+            raise TypeError('gen type must be subclass of SmartGen')
 
         self.expired = False
 
@@ -301,7 +278,7 @@ class Provider(ProviderCore):
                 raise FileNotFoundError(path)
 
     def proxy_dump(self, path: str = '') -> None:
-        with open(path if path else 'proxy.yaml', 'w+') as f:
+        with open(path if path else 'proxy.json', 'w+') as f:
             proxies = {}
 
             for i in self._proxies.values():
@@ -446,11 +423,8 @@ class SubProvider(ProviderCore):
 
         try:
             if mode == 0:
-                if 'type' not in kwargs:
-                    raise KeyError('type must be specified for ')
-
                 response = requests.request(
-                    kwargs['type'],
+                    kwargs['type'] if 'type' in kwargs else 'get',
                     url,
                     params=params,
                     headers=headers,
@@ -462,6 +436,7 @@ class SubProvider(ProviderCore):
                 response = cfscrape.create_scraper(
                     delay=kwargs['delay'] if 'delay' in kwargs else storage.provider.delay
                 ).request(
+                    kwargs['type'] if 'type' in kwargs else 'get',
                     url,
                     params=params,
                     headers=headers,
@@ -482,7 +457,7 @@ class SubProvider(ProviderCore):
             if isinstance(e, requests.ConnectionError):
                 self._log.warn(codes.Code(31301), self._script)
             elif isinstance(e, requests.Timeout):
-                self._log.warn(codes.Code(31302, str(kwargs['timeout'])), self._script)
+                self._log.warn(codes.Code(31302, str(timeout)), self._script)
 
             if proxy:
                 raise type(e)(f'{e} (proxy {proxy_.address})')
