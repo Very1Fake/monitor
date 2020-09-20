@@ -300,7 +300,7 @@ class EventHandler:
                             pass
                         except Exception as e:
                             if storage.main.production:
-                                self._log.error(codes.Code(40701, f'{k}: {e.__class__.__name__}: {str(e)}'))
+                                self._log.error(codes.Code(40701, f'{k}: {e.__class__.__name__}: {e!s}'))
                             else:
                                 self._log.fatal_msg(codes.Code(40701, k), traceback.format_exc())
             except queue.Empty:

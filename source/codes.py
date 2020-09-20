@@ -210,7 +210,10 @@ _codes: Dict[int, str] = {
     50401: 'Unexpectedly has turned off',
 
     # CatalogWorker (510xx)
-    51001: 'Unexpectedly has turned off'
+    51001: 'Unexpectedly has turned off',
+
+    # RemoteThread (514xx)
+    51401: 'Unknown fatal error'
 }
 
 

@@ -129,14 +129,14 @@ class Logger:
                 print(colored(
                     f'[{tools.get_time(storage.logger.utc_time)}] [FATAL] '
                     f'[{f"{parent}>" if parent else ""}{self.name}]: '
-                    f"{e.__class__.__name__}: {str(e)}",
+                    f"{e.__class__.__name__}: {e!s}",
                     'red',
                     attrs=['reverse']
                 ) + f"\n{'=' * 32}\n{traceback.format_exc()}\n{'=' * 32}")
         if storage.logger.mode == 2 or storage.logger.mode == 3:
             self.write(
                 0,
-                f"{e.__class__.__name__}: {str(e)}\n{'=' * 32}\n{traceback.format_exc()}\n{'=' * 32}",
+                f"{e.__class__.__name__}: {e!s}\n{'=' * 32}\n{traceback.format_exc()}\n{'=' * 32}",
                 parent
             )
         if from_:

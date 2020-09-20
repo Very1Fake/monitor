@@ -104,8 +104,8 @@ class Analytics:
             'count': len(proxies),
             'bad': sum([i['bad'] for i in proxies]),
             'min': min([i['min'] for i in proxies]),
-            'avg': min([i['avg'] for i in proxies]),
-            'max': min([i['max'] for i in proxies]),
+            'avg': mean([i['avg'] for i in proxies]),
+            'max': max([i['max'] for i in proxies]),
             'proxies': proxies
         }
 
