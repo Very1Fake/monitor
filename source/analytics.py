@@ -85,12 +85,13 @@ class Analytics:
         with core.provider.lock:
             if proxy in core.provider._proxies:
                 proxy = core.provider._proxies[proxy]
+                stats = [i for i in proxy.stats if i > 0]
                 return {
                     'address': proxy.address,
                     'bad': proxy.bad,
-                    'min': min(proxy.stats) if proxy.stats else 0,
-                    'avg': mean(proxy.stats) if proxy.stats else 0,
-                    'max': max(proxy.stats) if proxy.stats else 0
+                    'min': min(stats) if stats else 0,
+                    'avg': mean(stats) if stats else 0,
+                    'max': max(stats) if stats else 0
                 }
             else:
                 return {}

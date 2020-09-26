@@ -324,6 +324,8 @@ class Resolver:
                 code = 40903
             elif mode == 1:
                 code = 40904
+            else:
+                code = 40000
 
             cls._log.fatal_msg(
                 codes.Code(code, f'{task.script}: {e.__class__.__name__}: {e!s}'),

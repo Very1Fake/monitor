@@ -6,7 +6,7 @@ import threading
 import time
 import traceback
 from types import ModuleType
-from typing import Dict, Any, Tuple, List
+from typing import Dict, Any, Tuple, List, Type
 
 import yaml
 from checksumdir import dirhash
@@ -332,7 +332,7 @@ class EventHandler:
         else:
             self._log.warn(codes.Code(30702))
 
-    def add(self, name: str, executor: api.EventsExecutor) -> bool:
+    def add(self, name: str, executor: Type[api.EventsExecutor]) -> bool:
         with self._lock:
             self.executors[name] = executor(name, logger.Logger('EE/' + name))
             return True

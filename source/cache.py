@@ -76,7 +76,7 @@ type INTEGER NOT NULL, list TEXT NOT NULL);''')
     def unload(cls) -> None:
         with cls._lock, cls.__db as c:
             check()
-            cls.__db.backup(sqlite3.connect(f'{storage.cache.path}/hash.db'))
+            c.backup(sqlite3.connect(f'{storage.cache.path}/hash.db'))
 
     @classmethod
     def load(cls) -> bool:
@@ -90,7 +90,7 @@ type INTEGER NOT NULL, list TEXT NOT NULL);''')
             if os.path.isfile(f'{storage.cache.path}/hash.db'):
                 cls._clear()
 
-                sqlite3.connect(f'{storage.cache.path}/hash.db').backup(cls.__db)
+                sqlite3.connect(f'{storage.cache.path}/hash.db').backup(c)
                 return True
             else:
                 return False

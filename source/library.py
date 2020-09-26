@@ -1,13 +1,14 @@
 import collections
 import os
 import threading
-import time
+import urllib3
 from dataclasses import dataclass, field
 from typing import Any, List, Dict, Union, Tuple
 
 import ujson
-import cfscrape
 import requests
+from requests import adapters, exceptions
+from requests.cookies import cookiejar_from_dict
 
 from . import tools
 from . import codes
@@ -16,6 +17,9 @@ from . import storage
 
 
 # TODO: Add export/import of Proxy.bad
+
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 # Exception classes
@@ -225,7 +229,7 @@ class Provider(ProviderCore):
         try:
             self.log.info(codes.Code(21202, repr(proxy)))
             if (code := requests.get(storage.provider.test_url, proxies=proxy.use(),
-                                     timeout=storage.provider.timeout).status_code) != 200:
+                                     timeout=storage.provider.proxy_timeout).status_code) != 200:
                 self.log.info(codes.Code(41202, repr(proxy)))
                 if force:
                     return False
@@ -236,7 +240,7 @@ class Provider(ProviderCore):
             if force:
                 return False
             else:
-                raise ProviderError(f'Proxy not available or too slow (timeout: {storage.provider.timeout})')
+                raise ProviderError(f'Proxy not available or too slow (timeout: {storage.provider.proxy_timeout})')
         self.log.info(codes.Code(21203, repr(proxy)))
         return True
 
@@ -382,26 +386,17 @@ class SubProvider(ProviderCore):
     def request(
             self,
             url: str,
-            mode: int = 0,
             proxy: bool = False,
-            timeout: int = None,
             *,
             params: Dict[str, str] = None,
             headers: Dict[str, str] = None,
             cookies: Dict[str, Any] = None,
-            **kwargs
-    ) -> requests.Response:
+            type_: str = 'get'
+    ) -> Tuple[bool, Union[requests.Response, Exception]]:
         if not isinstance(url, str):
             raise TypeError('url must be str')
-        if not isinstance(mode, int):
-            raise TypeError('mode must be int')
         if not isinstance(proxy, bool):
             raise TypeError('proxy must be bool')
-        if timeout:
-            if not isinstance(timeout, int):
-                raise TypeError('int must be int')
-        else:
-            timeout = storage.provider.timeout
         if params:
             if not isinstance(params, dict):
                 raise TypeError('params must be dict')
@@ -417,52 +412,31 @@ class SubProvider(ProviderCore):
                 raise TypeError('cookies must be dict')
         else:
             cookies: Dict[str, Any] = {}
+        if not isinstance(type_, str):
+            raise TypeError('type_ must be str')
 
         proxy_ = self._proxy() if proxy else Proxy('')
-        start = time.time()
 
-        try:
-            if mode == 0:
-                response = requests.request(
-                    kwargs['type'] if 'type' in kwargs else 'get',
-                    url,
-                    params=params,
-                    headers=headers,
-                    cookies=cookies,
-                    proxies=proxy_.use(),
-                    timeout=timeout
-                )
-            elif mode == 1:
-                response = cfscrape.create_scraper(
-                    delay=kwargs['delay'] if 'delay' in kwargs else storage.provider.delay
-                ).request(
-                    kwargs['type'] if 'type' in kwargs else 'get',
-                    url,
-                    params=params,
-                    headers=headers,
-                    cookies=cookies,
-                    proxies=proxy_,
-                    timeout=timeout
-                )
-            else:
-                raise ValueError(f'Unknown mode, {mode}')
-        except requests.exceptions.ProxyError:
-            proxy_.bad += 1
-            raise ProxyError
-        except (ValueError, KeyError) as e:
-            raise e
-        except Exception as e:
-            proxy_.bad += 1
+        with requests.Session() as sess:
+            sess.cookies = cookiejar_from_dict(cookies)
+            sess.headers = headers
+            sess.max_redirects = storage.sub_provider.max_redirects
+            sess.params = params
+            sess.verify = False
+            sess.mount('http://', adapters.HTTPAdapter(pool_maxsize=1, pool_connections=1))
 
-            if isinstance(e, requests.ConnectionError):
-                self._log.warn(codes.Code(31301), self._script)
-            elif isinstance(e, requests.Timeout):
-                self._log.warn(codes.Code(31302, str(timeout)), self._script)
-
-            if proxy:
-                raise type(e)(f'{e} (proxy {proxy_.address})')
-            else:
-                raise e
-        else:
-            proxy_.stats = time.time() - start
-            return response
+            for i in range(storage.sub_provider.max_retries):
+                try:
+                    resp = sess.request(type_, url)
+                except (exceptions.Timeout, exceptions.ProxyError, exceptions.ChunkedEncodingError) as e:
+                    if proxy:
+                        proxy_.bad += 1
+                        proxy_.stats = -1
+                    self._log.test(codes.Code(11301, f'{type(e)}: {e!s}'), threading.current_thread().name)
+                    continue
+                except exceptions.RequestException as e:
+                    self._log.error(codes.Code(41301, f'{type(e)}: {e!s}'), threading.current_thread().name)
+                    return False, e
+                else:
+                    proxy_.stats = resp.elapsed.microseconds * 1000000
+                    return True, resp

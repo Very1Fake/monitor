@@ -1,8 +1,9 @@
 import abc
 import hashlib
 from dataclasses import dataclass, field
+from time import time
 from types import GeneratorType
-from typing import TypeVar, List, Union, Dict, Generator
+from typing import TypeVar, List, Union, Dict, Generator, Optional
 
 from . import codes
 from . import logger
@@ -392,6 +393,8 @@ class Item(abc.ABC):
     sizes: Sizes = None
     footer: List[FooterItem] = None
     fields: Dict[str, str] = None
+    publish_date: float
+    timestamp: float
 
     def __init__(
             self,
@@ -403,7 +406,8 @@ class Item(abc.ABC):
             price: Price = None,
             sizes: Sizes = None,
             footer: List[FooterItem] = None,
-            fields: Dict[str, str] = None
+            fields: Dict[str, str] = None,
+            publish_date: float = -1.
     ):
         if isinstance(url, str):
             self.url = url
@@ -467,6 +471,13 @@ class Item(abc.ABC):
         else:
             self.fields = {}
 
+        if isinstance(publish_date, float):
+            self.publish_date = publish_date
+        else:
+            raise TypeError('publish_date must be float')
+
+        self.timestamp = time()
+
     def __repr__(self):
         return f'Item({self.url=}, {self.channel=}, {self.name=})'
 
@@ -501,7 +512,7 @@ class IAnnounce(Item):
 
 
 class IRelease(Item):
-    restock: RestockTargetType
+    restock: Optional[RestockTargetType]
 
     def __init__(
             self,
@@ -514,6 +525,7 @@ class IRelease(Item):
             sizes: Sizes = None,
             footer: List[FooterItem] = None,
             fields: Dict[str, str] = None,
+            publish_date: float = -1.,
             restock: RestockTargetType = None
     ):
         if restock:
@@ -524,7 +536,7 @@ class IRelease(Item):
         else:
             self.restock = None
 
-        super().__init__(url, channel, name, image, description, price, sizes, footer, fields)
+        super().__init__(url, channel, name, image, description, price, sizes, footer, fields, publish_date)
 
 
 class IRestock(Item):
@@ -541,14 +553,15 @@ class IRestock(Item):
             price: Price = None,
             sizes: Sizes = None,
             footer: List[FooterItem] = None,
-            fields: Dict[str, str] = None
+            fields: Dict[str, str] = None,
+            publish_time: float = -1.
     ):
         if isinstance(id_, int):
             self.id = id_
         else:
             raise TypeError('id_ must be int')
 
-        super().__init__(name, channel, url, image, description, price, sizes, footer, fields)
+        super().__init__(name, channel, url, image, description, price, sizes, footer, fields, publish_time)
 
 
 # Script classes

@@ -14,6 +14,9 @@ _codes: Dict[int, str] = {
     10903: 'Catalog executed',
     10904: 'Target executed',
 
+    # SubProvider (113xx)
+    11301: 'Common exception while sending request',
+
     # Information (2xxxx)
     # System (200xx)
     20000: 'Test information',
@@ -147,13 +150,9 @@ _codes: Dict[int, str] = {
     31204: 'Proxies statistics reset',
     31205: 'Proxies list cleared',
 
-    # SubProvider (313xx)
-    31301: 'Request connection error',
-    31302: 'Request timeout',
-
     # Error (4xxxx)
     # System (400xx)
-    40000: 'Test error',
+    40000: 'Unknown error',
 
     # ThreadManager (402xx)
     40201: 'Pipe was unexpectedly stopped',
@@ -193,6 +192,9 @@ _codes: Dict[int, str] = {
     41201: 'Bad proxy',
     41202: 'Checking proxy (FAILED)',
 
+    # SubProvider (413xx)
+    41301: 'Severe exception while sending request',
+
     # Fatal (5xxxx)
     # System (500xx)
     50000: 'Test fatal',
@@ -222,7 +224,7 @@ class CodeError(Exception):
 
 
 class Code:
-    __slots__ = ('code', 'title', 'digest', 'hexdigest', 'message')
+    __slots__ = ('code', 'title', 'message')
     code: int
     title: str
     message: str

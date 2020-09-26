@@ -24,7 +24,7 @@ make
 To start use this command
 
 ```bash
-python3 -B start.py
+python3 -B -OO start.py
 ```
 
 

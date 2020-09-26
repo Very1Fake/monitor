@@ -2,7 +2,7 @@ import io
 import os
 import threading
 import traceback
-from typing import Union
+from typing import Union, Optional
 
 from termcolor import colored
 
@@ -13,7 +13,7 @@ from . import tools
 print_lock: threading.Lock = threading.Lock()
 write_lock: threading.Lock = threading.Lock()
 
-file: io.TextIOWrapper = None
+file: Optional[io.TextIOWrapper] = None
 
 
 class LoggerError(Exception):

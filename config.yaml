@@ -50,15 +50,19 @@ priority:
   catalog_default: 100
   target_default: 1001
 provider:
-  delay: 7.5
   max_bad: 25
+  proxy_timeout: 3.0
   test_url: http://google.com/
-  timeout: 5.0
 queues:
   catalog_queue_put_wait: 8.0
   catalog_queue_size: 256
   target_queue_put_wait: 8.0
   target_queue_size: 512
+sub_provider:
+  connect_timeout: 1.0
+  max_redirects: 5
+  max_retries: 3
+  read_timeout: 2.0
 thread_manager:
   lock_ticks: 16
   tick: 1.0
