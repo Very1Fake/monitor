@@ -1,9 +1,9 @@
-from statistics import mean
-
-import ujson
 import os
 import time
 from datetime import datetime
+from statistics import mean
+
+import ujson
 
 from . import storage, core, __version__
 
