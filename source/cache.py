@@ -4,12 +4,13 @@
 
 """
 
-import ujson
 import os
 import sqlite3
 import threading
 import time
 from typing import Optional
+
+import ujson
 
 from . import storage
 from . import tools

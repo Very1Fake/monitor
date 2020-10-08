@@ -2,19 +2,19 @@ import abc
 import collections
 import os
 import threading
-import urllib3
 from dataclasses import dataclass, field
 from typing import Any, List, Dict, Union, Tuple, TextIO
 
-import ujson
 import requests
+import ujson
+import urllib3
 from requests import adapters, exceptions
 from requests.cookies import cookiejar_from_dict
 
-from . import tools
 from . import codes
 from . import logger
 from . import storage
+from . import tools
 
 # TODO: Add export/import of Proxy.bad
 
