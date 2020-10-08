@@ -3,7 +3,7 @@ import random
 import threading
 import time
 import traceback
-from typing import Tuple, Dict, Type, List, Union
+from typing import Tuple, Dict, Type, List, Union, Optional
 
 import uctp
 import yaml
@@ -16,9 +16,8 @@ from . import commands
 from . import logger
 from . import scripts
 from . import storage
-from . import tools
 from .cache import UniquenessError, HashStorage
-from .library import PrioritizedItem, UniqueSchedule, Provider
+from .library import PrioritizedItem, UniqueSchedule, Provider, CoreStorage
 
 
 # TODO: throw() for state setters
@@ -53,6 +52,10 @@ class CatalogWorkerError(Exception):
 
 
 class StateError(Exception):
+    pass
+
+
+class RemoteThreadError(Exception):
     pass
 
 
@@ -144,10 +147,9 @@ class Resolver:
                     else:
                         if isinstance(catalog, api.CSmart):
                             if catalog.expired:
-                                cls._log.warn(codes.Code(30911, str(catalog)))
+                                cls._log.warn(codes.Code(30911, str(catalog)), threading.current_thread().name)
                             else:
-                                if (time_ := tools.SmartGen(catalog.timestamp, catalog.length, catalog.scatter,
-                                                            catalog.exp).extract()) == catalog.timestamp:
+                                if (time_ := catalog.gen.extract()) == catalog.gen.time:
                                     catalog.expired = True
 
                                 for i in range(100):  # TODO: Optimize
@@ -157,7 +159,10 @@ class Resolver:
                                         cls.catalogs[time_] = catalog
                                         break
                                 else:
-                                    cls._log.error(f'Smart catalog lost (calibration not passed): {catalog}')
+                                    cls._log.error(
+                                        f'Smart catalog lost (calibration not passed): {catalog}',
+                                        threading.current_thread().name
+                                    )
                         elif isinstance(catalog, api.CScheduled):
                             cls.catalogs[catalog.timestamp] = catalog
                         elif isinstance(catalog, api.CInterval):
@@ -169,7 +174,7 @@ class Resolver:
                         cls._log.fatal(CollectorError(codes.Code(40901, catalog)),
                                        parent=threading.current_thread().name)
             except IndexError:
-                cls._log.test(f'Inserting non-unique catalog')
+                cls._log.test(f'Inserting non-unique catalog', threading.current_thread().name)
 
     @classmethod
     def insert_target(cls, target: api.TargetType) -> None:
@@ -178,10 +183,9 @@ class Resolver:
                 try:
                     if isinstance(target, api.TSmart):
                         if target.expired:
-                            cls._log.warn(codes.Code(30912, str(target)))
+                            cls._log.warn(codes.Code(30912, str(target)), threading.current_thread().name)
                         else:
-                            if (time_ := tools.SmartGen(target.timestamp, target.length,
-                                                        target.scatter, target.exp).extract()) == target.timestamp:
+                            if (time_ := target.gen.extract()) == target.gen.time:
                                 target.expired = True
 
                             for i in range(100):  # TODO: Optimize
@@ -199,7 +203,7 @@ class Resolver:
                     else:
                         cls._log.error(codes.Code(40902, target), threading.current_thread().name)
                 except IndexError:
-                    cls._log.test(f'Inserting non-unique target')
+                    cls._log.test(f'Inserting non-unique target', threading.current_thread().name)
 
     @classmethod
     def remove_catalog(cls, script: str):
@@ -320,17 +324,19 @@ class Resolver:
                 code = 40903
             elif mode == 1:
                 code = 40904
+            else:
+                code = 40000
 
             cls._log.fatal_msg(
-                codes.Code(code, f'{task.script}: {e.__class__.__name__}: {str(e)}'),
+                codes.Code(code, f'{task.script}: {e.__class__.__name__}: {e!s}'),
                 traceback.format_exc(),
                 threading.current_thread().name
             )
-            script_manager.event_handler.alert(codes.Code(code, f'{task.script}: {e.__class__.__name__}: {str(e)}'),
+            script_manager.event_handler.alert(codes.Code(code, f'{task.script}: {e.__class__.__name__}: {e!s}'),
                                                threading.current_thread().name)
             return 4, task.script
 
-        catalog: api.CatalogType = None
+        catalog: Optional[api.CatalogType] = None
         targets: List[api.TargetType] = []
 
         for i in result:
@@ -423,7 +429,7 @@ class Pipe(ThreadClass):
                                     else:
                                         self._log.error(codes.Code(40301, i))
                                 except Exception as e:
-                                    self._log.warn(codes.Code(30301, f'{i}: {e.__class__.__name__}: {str(e)}'))
+                                    self._log.warn(codes.Code(30301, f'{i}: {e.__class__.__name__}: {e!s}'))
                             self.parsers_hashes = script_manager.hash()
                             self._log.info(codes.Code(20302))
                     elif self.parsers_hashes != script_manager.hash():
@@ -448,7 +454,7 @@ class Pipe(ThreadClass):
                             self._log.warn(codes.Code(30303, i))
 
                 except Exception as e:
-                    self.throw(codes.Code(50301, f'While working: {e.__class__.__name__}: {str(e)}'))
+                    self.throw(codes.Code(50301, f'While working: {e.__class__.__name__}: {e!s}'))
                     break
             elif self.state == 2:  # Pausing state
                 self._log.info(codes.Code(20002))
@@ -491,7 +497,7 @@ class Worker(ThreadClass):
                     else:
                         self.idle = True
                 except Exception as e:
-                    self.throw(codes.Code(50401, f'While working: {e.__class__.__name__}: {str(e)}'))
+                    self.throw(codes.Code(50401, f'While working: {e.__class__.__name__}: {e!s}'))
                     break
             elif self.state == 2:  # Pausing state
                 self._log.info(codes.Code(20002))
@@ -538,7 +544,7 @@ class CatalogWorker(ThreadClass):
                     else:
                         self.idle = False
                 except Exception as e:
-                    self.throw(codes.Code(51001, f'While working: {e.__class__.__name__}: {str(e)}'))
+                    self.throw(codes.Code(51001, f'While working: {e.__class__.__name__}: {e!s}'))
                     break
             elif self.state == 2:  # Pausing state
                 self._log.info(codes.Code(20002))
@@ -564,7 +570,7 @@ class ThreadManager(ThreadClass):
     catalog_workers: Dict[int, CatalogWorker]
     workers_increment_id: int
     workers: Dict[int, Worker]
-    pipe: Pipe
+    pipe: Optional[Pipe]
 
     def __init__(self) -> None:
         super().__init__('TM', ThreadManagerError)
@@ -731,15 +737,29 @@ class ThreadManager(ThreadClass):
                 time.sleep(storage.thread_manager.tick - delta if
                            storage.thread_manager.tick - delta > 0 else 0)
             except Exception as e:
-                self._log.fatal_msg(codes.Code(50201, f'{e.__class__.__name__}: {str(e)}'), traceback.format_exc())
+                self._log.fatal_msg(codes.Code(50201, f'{e.__class__.__name__}: {e!s}'), traceback.format_exc())
                 self.stop_threads()
-                self.throw(codes.Code(50201, f'While working: {e.__class__.__name__}: {str(e)}'))
+                self.throw(codes.Code(50201, f'While working: {e.__class__.__name__}: {e!s}'))
                 break
 
     def close(self) -> float:
         self.state = 5
         return storage.pipe.wait + len(self.workers) * (
                 storage.worker.wait + 1) + len(self.catalog_workers) * (storage.catalog_worker.wait + 1)
+
+
+class RemoteThreadHandler(uctp.peer.ErrorHandler):
+    _log: logger.Logger
+
+    def __init__(self):
+        self._log = logger.Logger('RT')
+
+    def handle(self, peer: uctp.peer.Peer, exception: Exception):
+        script_manager.event_handler.alert(codes.Code(51401), 'RT')
+        if storage.main.production:
+            self._log.fatal_msg(codes.Code(51401), traceback.format_exc())
+        else:
+            self._log.fatal(RemoteThreadError(codes.Code(51401, f'{exception.__class__.__name__}: {exception!s}')))
 
 
 class Core:
@@ -752,13 +772,13 @@ class Core:
         self.log = logger.Logger('M')
         self.thread_manager = ThreadManager()
 
-    def start(self):
+    def run(self):
         self.state = 1
 
         # Staring
         HashStorage.load()  # Load success hashes from cache
         storage.config_load()  # Load ./config.yaml
-        script_manager.index.config_load()  # Load ./scripts/config.yaml
+        script_manager.index.config_load()  # Load scripts.yaml
         script_manager.event_handler.start()  # Start event loop
 
         if storage.main.production:  # Notify about production mode
@@ -770,7 +790,7 @@ class Core:
         script_manager.event_handler.monitor_starting()
 
         commands.Commands()  # Initialize UCTP commands
-        server.run()  # Run UCTP server
+        server.start()  # Run UCTP server
 
         analytic.dump(0)  # Create startup report
 
@@ -800,7 +820,7 @@ class Core:
 
             self.thread_manager.join(self.thread_manager.close())  # Stop pipeline and wait
 
-            provider.proxy_dump()  # Save proxies to ./proxy.yaml
+            provider.proxy_dump()  # Save proxies to ./proxy.json
             analytic.dump(2)  # Create stop report
 
             script_manager.event_handler.monitor_stopped()
@@ -824,12 +844,13 @@ if __name__ == 'source.core':
     provider: Provider = Provider()
     server = uctp.peer.Peer(
         'monitor',
-        RSA.import_key(open('./monitor.pem').read()),
+        RSA.import_key(CoreStorage().file('monitor.pem').read()),
         '0.0.0.0',
-        trusted=uctp.peer.Trusted(*yaml.safe_load(open('authority.yaml'))['trusted']),
-        aliases=uctp.peer.Aliases(yaml.safe_load(open('authority.yaml'))['aliases']),
+        trusted=uctp.peer.Trusted(*yaml.safe_load(CoreStorage().file('authority.yaml'))['trusted']),
+        aliases=uctp.peer.Aliases(yaml.safe_load(CoreStorage().file('authority.yaml'))['aliases']),
         auth_timeout=4,
-        buffer=8192
+        buffer=8192,
+        error_handler=RemoteThreadHandler()
     )
 
     monitor: Core = Core()

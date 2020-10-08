@@ -48,6 +48,7 @@ def config_dump() -> None:
 class Main(NamedTuple):
     production: bool = False  # If True monitor will try to avoid fatal errors as possible
     logs_path: str = 'logs'
+    storage_path: str = 'storage'
 
 
 class Cache(NamedTuple):
@@ -114,10 +115,16 @@ class Priority(NamedTuple):
 
 
 class Provider(NamedTuple):
-    delay: float = 7.5
     max_bad: int = 25
-    timeout: float = 3.
     test_url: str = 'http://google.com/'
+    proxy_timeout: float = 3.0
+
+
+class SubProvider(NamedTuple):
+    max_redirects: int = 5
+    max_retries: int = 3
+    connect_timeout: float = 1.
+    read_timeout: float = 2.
 
 
 class EventHandler(NamedTuple):
@@ -137,6 +144,7 @@ categories: tuple = (
     'logger',
     'priority',
     'provider',
+    'sub_provider',
     'event_handler'
 )
 
@@ -152,6 +160,7 @@ queues: Queues = Queues()
 logger: Logger = Logger()
 priority: Priority = Priority()
 provider: Provider = Provider()
+sub_provider: SubProvider = SubProvider()
 event_handler: EventHandler = EventHandler()
 
 
