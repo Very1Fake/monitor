@@ -1,9 +1,10 @@
+import abc
 import collections
 import os
 import threading
 import urllib3
 from dataclasses import dataclass, field
-from typing import Any, List, Dict, Union, Tuple
+from typing import Any, List, Dict, Union, Tuple, TextIO
 
 import ujson
 import requests
@@ -14,7 +15,6 @@ from . import tools
 from . import codes
 from . import logger
 from . import storage
-
 
 # TODO: Add export/import of Proxy.bad
 
@@ -206,6 +206,44 @@ class Proxy:
 # Storage classes
 
 
+class Storage(abc.ABC):
+    __slots__ = '_path'
+    _path: str
+
+    def check_path(self) -> None:
+        if not os.path.isdir(self._path):
+            os.makedirs(self._path, mode=0o750)
+
+    def check(self, name: str) -> bool:
+        self.check_path()
+        return os.path.isfile(self._path + '/' + name)
+
+    def file(
+            self,
+            name: str,
+            mode: str = 'r',
+            buffering=-1,
+            encoding=None,
+            errors=None,
+            newline=None,
+            closefd=True,
+            opener=None
+    ) -> TextIO:
+        self.check_path()
+        return open(self._path + '/' + name, mode,
+                    buffering, encoding, errors, newline, closefd, opener)
+
+
+class CoreStorage(Storage):
+    def __init__(self):
+        self._path = os.path.abspath(storage.main.storage_path.rstrip('/') + '/core')
+
+
+class ScriptStorage(Storage):  # TODO: Dynamic storage path
+    def __init__(self, script: str):
+        self._path = os.path.abspath(f'{storage.main.storage_path.rstrip("/")}/scripts/{script}')
+
+
 class ProviderCore:
     lock: threading.RLock = threading.RLock()
     _proxies: Dict[str, Proxy] = {}
@@ -245,9 +283,9 @@ class Provider(ProviderCore):
         return True
 
     @staticmethod
-    def proxy_file_check(path: str) -> None:
-        if os.path.isfile(path):
-            file = open('proxy.json', 'r' if os.path.isfile('proxy.json') else 'w+').read()
+    def proxy_file_check() -> None:
+        if CoreStorage().check('proxy.json'):
+            file = CoreStorage().file('proxy.json', 'r' if os.path.isfile('proxy.json') else 'w+').read()
 
             if file:
                 try:
@@ -274,15 +312,12 @@ class Provider(ProviderCore):
                 except ValueError:
                     raise SyntaxError('Non JSON file')
             else:
-                ujson.dump({}, open(path, 'w+'), indent=4)
+                ujson.dump({}, CoreStorage().file('proxy.json', 'w+'), indent=4)
         else:
-            if path == 'proxy.json':
-                ujson.dump({}, open(path, 'w+'), indent=4)
-            else:
-                raise FileNotFoundError(path)
+            ujson.dump({}, CoreStorage().file('proxy.json', 'w+'), indent=4)
 
-    def proxy_dump(self, path: str = '') -> None:
-        with open(path if path else 'proxy.json', 'w+') as f:
+    def proxy_dump(self) -> None:
+        with CoreStorage().file('proxy.json', 'w+') as f:
             proxies = {}
 
             for i in self._proxies.values():
@@ -295,13 +330,10 @@ class Provider(ProviderCore):
 
         self.log.info(codes.Code(21201))
 
-    def proxy_load(self, path: str = None) -> Tuple[int, int, int]:
-        if not path:
-            path = 'proxy.json'
+    def proxy_load(self) -> Tuple[int, int, int]:
+        self.proxy_file_check()
 
-        self.proxy_file_check(path)
-
-        proxy = ujson.load(open(path))
+        proxy = ujson.load(CoreStorage().file('proxy.json'))
         edited, new = 0, 0
 
         for k, v in proxy.items():
@@ -391,7 +423,8 @@ class SubProvider(ProviderCore):
             params: Dict[str, str] = None,
             headers: Dict[str, str] = None,
             cookies: Dict[str, Any] = None,
-            type_: str = 'get'
+            data: Union[str, bytes] = '',
+            method: str = 'get'
     ) -> Tuple[bool, Union[requests.Response, Exception]]:
         if not isinstance(url, str):
             raise TypeError('url must be str')
@@ -412,8 +445,10 @@ class SubProvider(ProviderCore):
                 raise TypeError('cookies must be dict')
         else:
             cookies: Dict[str, Any] = {}
-        if not isinstance(type_, str):
-            raise TypeError('type_ must be str')
+        if not isinstance(data, (str, bytes)):
+            raise TypeError('data must be str or bytes')
+        if not isinstance(method, str):
+            raise TypeError('method must be str')
 
         proxy_ = self._proxy() if proxy else Proxy('')
 
@@ -427,7 +462,7 @@ class SubProvider(ProviderCore):
 
             for i in range(storage.sub_provider.max_retries):
                 try:
-                    resp = sess.request(type_, url)
+                    resp = sess.request(method, url, data=data)
                 except (exceptions.Timeout, exceptions.ProxyError, exceptions.ChunkedEncodingError) as e:
                     if proxy:
                         proxy_.bad += 1

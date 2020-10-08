@@ -48,6 +48,7 @@ def config_dump() -> None:
 class Main(NamedTuple):
     production: bool = False  # If True monitor will try to avoid fatal errors as possible
     logs_path: str = 'logs'
+    storage_path: str = 'storage'
 
 
 class Cache(NamedTuple):

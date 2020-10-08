@@ -7,7 +7,7 @@ from typing import TypeVar, List, Union, Dict, Generator, Optional
 
 from . import codes
 from . import logger
-from .library import Interval, Scheduled, Smart, SubProvider
+from .library import Interval, Scheduled, Smart, SubProvider, ScriptStorage
 
 # Constants
 
@@ -571,11 +571,13 @@ class Parser(abc.ABC):  # Class to implement by scripts with parser
     name: str
     log: logger.Logger
     provider: SubProvider
+    storage: ScriptStorage
 
-    def __init__(self, name: str, log: logger.Logger, provider_: SubProvider):
+    def __init__(self, name: str, log: logger.Logger, provider_: SubProvider, storage: ScriptStorage):
         self.name = name
         self.log = log
         self.provider = provider_
+        self.storage = storage
 
     @property
     def catalog(self) -> CatalogType:
@@ -591,9 +593,14 @@ class Parser(abc.ABC):  # Class to implement by scripts with parser
 
 
 class EventsExecutor(abc.ABC):
-    def __init__(self, name: str, log: logger.Logger):
+    name: str
+    log: logger.Logger
+    storage: ScriptStorage
+
+    def __init__(self, name: str, log: logger.Logger, storage: ScriptStorage):
         self.name = name
         self.log = log
+        self.storage = storage
 
     def e_monitor_starting(self) -> None: ...
 

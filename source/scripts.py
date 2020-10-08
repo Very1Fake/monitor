@@ -17,6 +17,7 @@ from . import codes
 from . import logger
 from . import storage
 from . import version
+from .library import CoreStorage, ScriptStorage
 
 
 class ScriptNotFound(Exception):
@@ -52,8 +53,8 @@ class ScriptIndex:
 
     def config_check(self) -> None:
         with self.lock:
-            if os.path.isfile('scripts/config.yaml'):
-                conf = yaml.safe_load(open('scripts/config.yaml'))
+            if CoreStorage().file('scripts.yaml'):
+                conf = yaml.safe_load(CoreStorage().file('scripts.yaml'))
                 if isinstance(conf, dict):
                     different = False
                     for k, v in self.config.items():
@@ -66,19 +67,19 @@ class ScriptIndex:
                                     different = True
                                     conf[k][k2] = v2
                     if different:
-                        yaml.safe_dump(conf, open('scripts/config.yaml', 'w+'))
+                        yaml.safe_dump(conf, CoreStorage().file('scripts.yaml', 'w+'))
                     else:
                         return
-            yaml.safe_dump(self.config, open('scripts/config.yaml', 'w+'))
+            yaml.safe_dump(self.config, CoreStorage().file('scripts.yaml', 'w+'))
 
     def config_load(self) -> None:
         with self.lock:
             self.config_check()
-            self.config = yaml.safe_load(open('scripts/config.yaml'))
+            self.config = yaml.safe_load(CoreStorage().file('scripts.yaml'))
 
     def config_dump(self) -> None:
         with self.lock:
-            yaml.safe_dump(self.config, open('scripts/config.yaml', 'w+'))
+            yaml.safe_dump(self.config, CoreStorage().file('scripts.yaml', 'w+'))
 
     @staticmethod
     def check_dependency_version_style(version_: str) -> bool:
@@ -283,7 +284,7 @@ class EventHandler:
 
         self.executors = {}
         self.pool = queue.Queue()
-        self.thread = threading.Thread(target=self.loop)
+        self.thread = threading.Thread(target=self.loop, daemon=True)
 
     def loop(self):
         while True:
@@ -317,7 +318,7 @@ class EventHandler:
             try:
                 self.thread.start()
             except RuntimeError:
-                self.thread = threading.Thread(target=self.loop)
+                self.thread = threading.Thread(target=self.loop, daemon=True)
                 self.thread.start()
             self._log.info(codes.Code(20702))
         else:
@@ -334,7 +335,7 @@ class EventHandler:
 
     def add(self, name: str, executor: Type[api.EventsExecutor]) -> bool:
         with self._lock:
-            self.executors[name] = executor(name, logger.Logger('EE/' + name))
+            self.executors[name] = executor(name, logger.Logger('EE/' + name), ScriptStorage(name))
             return True
 
     def delete(self, name: str) -> bool:
@@ -415,7 +416,8 @@ class ScriptManager:
                 self.parsers[script['name']] = getattr(module, 'Parser')(
                     script['name'],
                     logger.Logger('Parser/' + script['name']),
-                    api.SubProvider(script['name'])
+                    api.SubProvider(script['name']),
+                    ScriptStorage(script['name'])
                 )
             else:
                 self.parsers[script['name']] = getattr(module, 'Parser')
@@ -575,7 +577,12 @@ class ScriptManager:
         if keep:
             return parser
         else:
-            return parser.__init__(name, logger.Logger(f'parser/{name}'), api.SubProvider(name))
+            return parser.__init__(
+                name,
+                logger.Logger(f'parser/{name}'),
+                api.SubProvider(name),
+                ScriptStorage(name)
+            )
 
     def execute_parser(self, name: str, func: str, args: tuple) -> Any:
         try:

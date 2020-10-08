@@ -22,6 +22,7 @@ logger:
 main:
   logs_path: logs
   production: false
+  storage_path: storage
 pipe:
   tick: 0.5
   wait: 10.0

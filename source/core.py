@@ -17,7 +17,7 @@ from . import logger
 from . import scripts
 from . import storage
 from .cache import UniquenessError, HashStorage
-from .library import PrioritizedItem, UniqueSchedule, Provider
+from .library import PrioritizedItem, UniqueSchedule, Provider, CoreStorage
 
 
 # TODO: throw() for state setters
@@ -778,7 +778,7 @@ class Core:
         # Staring
         HashStorage.load()  # Load success hashes from cache
         storage.config_load()  # Load ./config.yaml
-        script_manager.index.config_load()  # Load ./scripts/config.yaml
+        script_manager.index.config_load()  # Load scripts.yaml
         script_manager.event_handler.start()  # Start event loop
 
         if storage.main.production:  # Notify about production mode
@@ -844,10 +844,10 @@ if __name__ == 'source.core':
     provider: Provider = Provider()
     server = uctp.peer.Peer(
         'monitor',
-        RSA.import_key(open('./monitor.pem').read()),
+        RSA.import_key(CoreStorage().file('monitor.pem').read()),
         '0.0.0.0',
-        trusted=uctp.peer.Trusted(*yaml.safe_load(open('authority.yaml'))['trusted']),
-        aliases=uctp.peer.Aliases(yaml.safe_load(open('authority.yaml'))['aliases']),
+        trusted=uctp.peer.Trusted(*yaml.safe_load(CoreStorage().file('authority.yaml'))['trusted']),
+        aliases=uctp.peer.Aliases(yaml.safe_load(CoreStorage().file('authority.yaml'))['aliases']),
         auth_timeout=4,
         buffer=8192,
         error_handler=RemoteThreadHandler()

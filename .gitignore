@@ -1,11 +1,9 @@
 ### Monitor
 cache/
 logs/
+storage/
 reports/
 
-*.pem
-authority.yaml
-proxy.json
 
 ### Idea
 .idea/
