@@ -151,4 +151,4 @@ class Analytics:
             storage.analytics.path + f'/report_{suffix}'
                                      f'{datetime.utcnow().strftime("%Y-%m-%d_%H:%M:%S")}.json',
             'w+'
-        ), indent=2 if storage.analytics.beautify else None)
+        ), indent=2 if storage.analytics.beautify else 0)

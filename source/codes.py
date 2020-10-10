@@ -96,6 +96,12 @@ _codes: Dict[int, str] = {
     21202: 'Checking proxy',
     21203: 'Checking proxy (OK)',
 
+    # Keywords (215xx)
+    21501: 'Loading keywords (started)',
+    21502: 'Loading keywords (complete)',
+    21503: 'Dumping keywords (started)',
+    21504: 'Dumping keywords (complete)',
+
     # Warning (3xxxx)
     # System (300xx)
     30000: 'Test warning',
@@ -150,6 +156,15 @@ _codes: Dict[int, str] = {
     31204: 'Proxies statistics reset',
     31205: 'Proxies list cleared',
 
+    # Keywords (315xx)
+    31501: 'Keywords file not found',
+    31511: 'Absolute keyword not loaded (TypeError)',
+    31512: 'Absolute keyword not loaded (UniquenessError)',
+    31521: 'Positive keyword not loaded (TypeError)',
+    31522: 'Positive keyword not loaded (UniquenessError)',
+    31531: 'Negative keyword not loaded (TypeError)',
+    31532: 'Negative keyword not loaded (UniquenessError)',
+
     # Error (4xxxx)
     # System (400xx)
     40000: 'Unknown error',
@@ -194,6 +209,9 @@ _codes: Dict[int, str] = {
 
     # SubProvider (413xx)
     41301: 'Severe exception while sending request',
+
+    # Keywords (415xx)
+    41501: 'Loading keywords (Failed)',
 
     # Fatal (5xxxx)
     # System (500xx)
