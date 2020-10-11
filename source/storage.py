@@ -125,6 +125,8 @@ class SubProvider(NamedTuple):
     max_retries: int = 3
     connect_timeout: float = 1.
     read_timeout: float = 2.
+    compression: bool = False
+    comp_type: str = 'gzip, deflate, br'
 
 
 class EventHandler(NamedTuple):

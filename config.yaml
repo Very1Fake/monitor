@@ -60,6 +60,8 @@ queues:
   target_queue_put_wait: 8.0
   target_queue_size: 512
 sub_provider:
+  comp_type: gzip, deflate, br
+  compression: false
   connect_timeout: 1.0
   max_redirects: 5
   max_retries: 3

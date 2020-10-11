@@ -460,6 +460,9 @@ class SubProvider(ProviderCore):
             sess.verify = False
             sess.mount('http://', adapters.HTTPAdapter(pool_maxsize=1, pool_connections=1))
 
+            if storage.sub_provider.compression:
+                sess.headers.update({'Accept-Encoding': storage.sub_provider.comp_type})
+
             for i in range(storage.sub_provider.max_retries):
                 try:
                     resp = sess.request(method, url, data=data)
