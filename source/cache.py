@@ -13,8 +13,8 @@ from typing import Optional
 import ujson
 
 from . import storage
-from . import tools
 from .api import Size, Sizes, Item, ItemType
+from .tools import get_time, CacheStorage
 
 
 class UniquenessError(Exception):
@@ -105,7 +105,7 @@ type INTEGER NOT NULL, list TEXT NOT NULL);''')
         """
         with cls._lock, cls.__db as c:
             check()
-            f = open(f'{storage.cache.path}/hash_{tools.get_time(name=True)}.sql', 'w+')
+            f = CacheStorage().file(f'hash_{get_time(name=True)}.sql', 'w+')
             for i in c.iterdump():
                 f.write(i + '\n')
                 f.flush()
@@ -119,7 +119,7 @@ type INTEGER NOT NULL, list TEXT NOT NULL);''')
         """
         with cls._lock, cls.__db as c:
             check()
-            c.backup(sqlite3.connect(f'{storage.cache.path}/hash_{tools.get_time(name=True)}.db.backup'))
+            c.backup(sqlite3.connect(f'{storage.cache.path}/hash_{get_time(name=True)}.db.backup'))
 
     @classmethod
     def delete(cls, table: str) -> None:

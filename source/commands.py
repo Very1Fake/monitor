@@ -38,8 +38,10 @@ class Commands:
         core.server.commands.add_(self.index_worker_pause)
         core.server.commands.add_(self.index_worker_resume)
         core.server.commands.add_(self.keywords)
-        core.server.commands.add_(self.keywords_load)
         core.server.commands.add_(self.keywords_dump)
+        core.server.commands.add_(self.keywords_sync)
+        core.server.commands.add_(self.keywords_clear)
+        core.server.commands.add_(self.keywords_load)
         core.server.commands.add_(self.keywords_add)
         core.server.commands.add_(self.keywords_remove)
         core.server.commands.add_(self.log_file_reset)
@@ -95,8 +97,10 @@ class Commands:
         core.server.commands.alias('iw-list', 'index_worker_list')
         core.server.commands.alias('iw-pause', 'index_worker_pause')
         core.server.commands.alias('iw-resume', 'index_worker_resume')
-        core.server.commands.alias('kw-load', 'keywords_load')
         core.server.commands.alias('kw-dump', 'keywords_dump')
+        core.server.commands.alias('kw-sync', 'keywords_sync')
+        core.server.commands.alias('kw-clear', 'keywords_clear')
+        core.server.commands.alias('kw-load', 'keywords_load')
         core.server.commands.alias('kw-add', 'keywords_add')
         core.server.commands.alias('kw-remove', 'keywords_remove')
         core.server.commands.alias('l-file-reset', 'log_file_reset')
@@ -259,13 +263,21 @@ class Commands:
         self.log.info(Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))
         return Keywords.export()
 
-    def keywords_load(self, peer: Peer) -> int:
-        self.log.info(Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))
-        return Keywords.load()
-
     def keywords_dump(self, peer: Peer) -> int:
         self.log.info(Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))
         return Keywords.dump()
+
+    def keywords_sync(self, peer: Peer) -> int:
+        self.log.info(Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))
+        return Keywords.sync()
+
+    def keywords_clear(self, peer: Peer) -> int:
+        self.log.info(Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))
+        return Keywords.clear()
+
+    def keywords_load(self, peer: Peer) -> int:
+        self.log.info(Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))
+        return Keywords.load()
 
     def keywords_add(self, peer: Peer, type_: str, kw: str) -> int:
         self.log.info(Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))

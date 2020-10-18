@@ -17,7 +17,7 @@ from . import logger
 from . import scripts
 from . import storage
 from .cache import UniquenessError, HashStorage
-from .library import PrioritizedItem, UniqueSchedule, Provider, CoreStorage, Keywords
+from .library import PrioritizedItem, UniqueSchedule, Provider, MainStorage, Keywords
 
 
 # TODO: throw() for state setters
@@ -847,10 +847,10 @@ if __name__ == 'source.core':
     provider: Provider = Provider()
     server = uctp.peer.Peer(
         'monitor',
-        RSA.import_key(CoreStorage().file('monitor.pem').read()),
+        RSA.import_key(MainStorage().file('monitor.pem').read()),
         '0.0.0.0',
-        trusted=uctp.peer.Trusted(*yaml.safe_load(CoreStorage().file('authority.yaml'))['trusted']),
-        aliases=uctp.peer.Aliases(yaml.safe_load(CoreStorage().file('authority.yaml'))['aliases']),
+        trusted=uctp.peer.Trusted(*yaml.safe_load(MainStorage().file('authority.yaml'))['trusted']),
+        aliases=uctp.peer.Aliases(yaml.safe_load(MainStorage().file('authority.yaml'))['aliases']),
         auth_timeout=4,
         buffer=8192,
         error_handler=RemoteThreadHandler()

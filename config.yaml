@@ -15,10 +15,9 @@ event_handler:
   tick: 0.1
   wait: 3.0
 logger:
+  content: 2
   level: 4
-  message_content: 2
   mode: 1
-  utc_time: true
 main:
   logs_path: logs
   production: false
@@ -53,7 +52,7 @@ priority:
 provider:
   max_bad: 25
   proxy_timeout: 3.0
-  test_url: http://google.com/
+  test_url: http://ip-api.com/json?fields=2154502
 queues:
   catalog_queue_put_wait: 8.0
   catalog_queue_size: 256
@@ -66,6 +65,7 @@ sub_provider:
   max_redirects: 5
   max_retries: 3
   read_timeout: 2.0
+  verify: false
 thread_manager:
   lock_ticks: 16
   tick: 1.0

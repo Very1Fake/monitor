@@ -7,7 +7,8 @@ from typing import TypeVar, List, Union, Dict, Generator, Optional
 
 from . import codes
 from . import logger
-from .library import Interval, Scheduled, Smart, SubProvider, ScriptStorage
+from .library import Interval, Scheduled, Smart, SubProvider
+from .tools import ScriptStorage
 
 # Constants
 

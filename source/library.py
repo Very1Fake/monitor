@@ -1,9 +1,7 @@
-import abc
 import collections
-import os
 import threading
 from dataclasses import dataclass, field
-from typing import Any, List, Dict, Union, Tuple, TextIO
+from typing import Any, List, Dict, Union, Tuple
 
 import requests
 import ujson
@@ -13,8 +11,8 @@ from requests.cookies import cookiejar_from_dict
 
 from . import logger
 from . import storage
-from . import tools
 from .codes import Code
+from .tools import SmartGen, SmartGenType, MainStorage
 
 # TODO: Add export/import of Proxy.bad
 
@@ -132,11 +130,11 @@ class Scheduled:
 
 @dataclass
 class Smart:
-    gen: tools.SmartGenType = field(compare=False, repr=False)
+    gen: SmartGenType = field(compare=False, repr=False)
     expired: bool = field(init=False)
 
     def __post_init__(self):
-        if not issubclass(type(self.gen), tools.SmartGen):
+        if not issubclass(type(self.gen), SmartGen):
             raise TypeError('gen type must be subclass of SmartGen')
 
         self.expired = False
@@ -206,44 +204,6 @@ class Proxy:
 # Storage classes
 
 
-class Storage(abc.ABC):
-    __slots__ = '_path'
-    _path: str
-
-    def check_path(self) -> None:
-        if not os.path.isdir(self._path):
-            os.makedirs(self._path, mode=0o750)
-
-    def check(self, name: str) -> bool:
-        self.check_path()
-        return os.path.isfile(self._path + '/' + name)
-
-    def file(
-            self,
-            name: str,
-            mode: str = 'r',
-            buffering=-1,
-            encoding=None,
-            errors=None,
-            newline=None,
-            closefd=True,
-            opener=None
-    ) -> TextIO:
-        self.check_path()
-        return open(self._path + '/' + name, mode,
-                    buffering, encoding, errors, newline, closefd, opener)
-
-
-class CoreStorage(Storage):  # TODO: Optimize
-    def __init__(self):
-        self._path = os.path.abspath(storage.main.storage_path.rstrip('/') + '/core')
-
-
-class ScriptStorage(Storage):  # TODO: Dynamic storage path
-    def __init__(self, script: str):
-        self._path = os.path.abspath(f'{storage.main.storage_path.rstrip("/")}/scripts/{script}')
-
-
 class ProviderCore:
     lock: threading.RLock = threading.RLock()
     _proxies: Dict[str, Proxy] = {}
@@ -284,8 +244,8 @@ class Provider(ProviderCore):
 
     @staticmethod
     def proxy_file_check() -> None:
-        if CoreStorage().check('proxy.json'):
-            file = CoreStorage().file('proxy.json', 'r' if os.path.isfile('proxy.json') else 'w+').read()
+        if MainStorage().check('proxy.json'):
+            file = MainStorage().file('proxy.json', 'r' if MainStorage().check('proxy.json') else 'w+').read()
 
             if file:
                 try:
@@ -312,12 +272,12 @@ class Provider(ProviderCore):
                 except ValueError:
                     raise SyntaxError('Non JSON file')
             else:
-                ujson.dump({}, CoreStorage().file('proxy.json', 'w+'), indent=4)
+                ujson.dump({}, MainStorage().file('proxy.json', 'w+'), indent=4)
         else:
-            ujson.dump({}, CoreStorage().file('proxy.json', 'w+'), indent=4)
+            ujson.dump({}, MainStorage().file('proxy.json', 'w+'), indent=4)
 
     def proxy_dump(self) -> None:
-        with CoreStorage().file('proxy.json', 'w+') as f:
+        with MainStorage().file('proxy.json', 'w+') as f:
             proxies = {}
 
             for i in self._proxies.values():
@@ -333,7 +293,7 @@ class Provider(ProviderCore):
     def proxy_load(self) -> Tuple[int, int, int]:
         self.proxy_file_check()
 
-        proxy = ujson.load(CoreStorage().file('proxy.json'))
+        proxy = ujson.load(MainStorage().file('proxy.json'))
         edited, new = 0, 0
 
         for k, v in proxy.items():
@@ -457,7 +417,7 @@ class SubProvider(ProviderCore):
             sess.headers = headers
             sess.max_redirects = storage.sub_provider.max_redirects
             sess.params = params
-            sess.verify = False
+            sess.verify = storage.sub_provider.verify
             sess.mount('http://', adapters.HTTPAdapter(pool_maxsize=1, pool_connections=1))
 
             if storage.sub_provider.compression:
@@ -481,8 +441,6 @@ class SubProvider(ProviderCore):
 
 
 class Keywords:
-    # TODO: Truncate & sync & load funcs
-
     __slots__ = []
     _lock: threading.RLock = threading.RLock()
     _log: logger.Logger = logger.Logger('KW')
@@ -510,39 +468,12 @@ class Keywords:
             return has_pos
 
     @classmethod
-    def load(cls) -> int:
-        with cls._lock:
-            cls._log.info(Code(21501))
-            if CoreStorage().check('keywords.json'):
-                kw = ujson.load(CoreStorage().file('keywords.json'))
-
-                if isinstance(kw, dict):
-                    if 'absolute' in kw and isinstance(kw['absolute'], list):
-                        for i in kw['absolute']:
-                            cls.add_abs(i)
-                    if 'positive' in kw and isinstance(kw['positive'], list):
-                        for i in kw['positive']:
-                            cls.add_pos(i)
-                    if 'negative' in kw and isinstance(kw['negative'], list):
-                        for i in kw['negative']:
-                            cls.add_neg(i)
-                    cls._log.info(Code(21502))
-                    return 0
-                else:
-                    raise TypeError('keywords.json must be object')
-            else:
-                cls._log.warn(Code(31501))
-                ujson.dump({'absolute': [], 'positive': [], 'negative': []},
-                           CoreStorage().file('keywords.json'), indent=2)
-                return 1
-
-    @classmethod
     def dump(cls) -> int:
         with cls._lock:
-            cls._log.info(Code(21503))
-            if CoreStorage().check('keywords.json'):
-                kw = ujson.load(CoreStorage().file('keywords.json'))
-    
+            cls._log.info(Code(21501))
+            if MainStorage().check('keywords.json'):
+                kw = ujson.load(MainStorage().file('keywords.json'))
+
                 if isinstance(kw, dict) and 'absolute' in kw and isinstance(kw['absolute'], list):
                     cls.abs.sort()
                     kw['absolute'].sort()
@@ -555,9 +486,55 @@ class Keywords:
                             if cls.neg == kw['negative']:
                                 cls._log.info(Code(21504))
                                 return 1
-    
-            ujson.dump(cls.export(), CoreStorage().file('keywords.json', 'w+'), indent=2)
-            cls._log.info(Code(21504))
+
+            ujson.dump(cls.export(), MainStorage().file('keywords.json', 'w+'), indent=2)
+            cls._log.info(Code(21502))
+            return 0
+
+    @classmethod
+    def sync(cls) -> int:
+        with cls._lock:
+            cls._log.info(Code(21503))
+            if MainStorage().check('keywords.json'):
+                kw = ujson.load(MainStorage().file('keywords.json'))
+
+                if isinstance(kw, dict):
+                    if 'absolute' in kw and isinstance(kw['absolute'], list):
+                        for i in kw['absolute']:
+                            cls.add_abs(i)
+                    if 'positive' in kw and isinstance(kw['positive'], list):
+                        for i in kw['positive']:
+                            cls.add_pos(i)
+                    if 'negative' in kw and isinstance(kw['negative'], list):
+                        for i in kw['negative']:
+                            cls.add_neg(i)
+                    cls._log.info(Code(21504))
+                    return 0
+                else:
+                    raise TypeError('keywords.json must be object')
+            else:
+                cls._log.warn(Code(31501))
+                ujson.dump({'absolute': [], 'positive': [], 'negative': []},
+                           MainStorage().file('keywords.json'), indent=2)
+                return 1
+
+    @classmethod
+    def clear(cls) -> int:
+        with cls._lock:
+            cls._log.info(Code(21505))
+            cls.abs.clear()
+            cls.pos.clear()
+            cls.neg.clear()
+            cls._log.info(Code(21506))
+            return 0
+
+    @classmethod
+    def load(cls) -> int:
+        with cls._lock:
+            cls._log.info(Code(21507))
+            cls.clear()
+            cls.sync()
+            cls._log.info(Code(21508))
             return 0
 
     @classmethod

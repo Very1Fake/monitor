@@ -97,10 +97,14 @@ _codes: Dict[int, str] = {
     21203: 'Checking proxy (OK)',
 
     # Keywords (215xx)
-    21501: 'Loading keywords (started)',
-    21502: 'Loading keywords (complete)',
-    21503: 'Dumping keywords (started)',
-    21504: 'Dumping keywords (complete)',
+    21501: 'Dumping keywords(started)',
+    21502: 'Dumping keywords(complete)',
+    21503: 'Clearing keywords(started)',
+    21504: 'Clearing keywords(complete)',
+    21505: 'Syncing keywords(started)',
+    21506: 'Syncing keywords(complete)',
+    21507: 'Loading keywords(started)',
+    21508: 'Loading keywords(complete)',
 
     # Warning (3xxxx)
     # System (300xx)

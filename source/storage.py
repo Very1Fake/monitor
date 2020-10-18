@@ -94,10 +94,9 @@ class Queues(NamedTuple):
 
 
 class Logger(NamedTuple):
+    content: int = 1  # (0 - Only code, 1 - Code & Message, 2 - Code & Title & Message
     level: int = 4  # (5 - Test, 4 - Debug, 3 - Info, 2 - Warn, 1 - Error, 0 - Fatal)
     mode: int = 1  # (0 - off, 1 - Console only, 2 - File only, 3 - Console & File)
-    utc_time: bool = True  # (True - UTC (Coordinated Universal Time), False - local time)
-    message_content: int = 1  # (0 - Only code, 1 - Code & Message, 2 - Code & Title & Message
 
 
 class Priority(NamedTuple):
@@ -116,7 +115,7 @@ class Priority(NamedTuple):
 
 class Provider(NamedTuple):
     max_bad: int = 25
-    test_url: str = 'http://google.com/'
+    test_url: str = 'http://ip-api.com/json?fields=2154502'
     proxy_timeout: float = 3.0
 
 
@@ -127,6 +126,7 @@ class SubProvider(NamedTuple):
     read_timeout: float = 2.
     compression: bool = False
     comp_type: str = 'gzip, deflate, br'
+    verify: bool = False
 
 
 class EventHandler(NamedTuple):

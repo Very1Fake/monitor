@@ -17,7 +17,7 @@ from . import codes
 from . import logger
 from . import storage
 from . import version
-from .library import CoreStorage, ScriptStorage
+from .tools import get_time, MainStorage, ScriptStorage
 
 
 class ScriptNotFound(Exception):
@@ -53,8 +53,8 @@ class ScriptIndex:
 
     def config_check(self) -> None:
         with self.lock:
-            if CoreStorage().file('scripts.yaml'):
-                conf = yaml.safe_load(CoreStorage().file('scripts.yaml'))
+            if MainStorage().file('scripts.yaml'):
+                conf = yaml.safe_load(MainStorage().file('scripts.yaml'))
                 if isinstance(conf, dict):
                     different = False
                     for k, v in self.config.items():
@@ -67,19 +67,19 @@ class ScriptIndex:
                                     different = True
                                     conf[k][k2] = v2
                     if different:
-                        yaml.safe_dump(conf, CoreStorage().file('scripts.yaml', 'w+'))
+                        yaml.safe_dump(conf, MainStorage().file('scripts.yaml', 'w+'))
                     else:
                         return
-            yaml.safe_dump(self.config, CoreStorage().file('scripts.yaml', 'w+'))
+            yaml.safe_dump(self.config, MainStorage().file('scripts.yaml', 'w+'))
 
     def config_load(self) -> None:
         with self.lock:
             self.config_check()
-            self.config = yaml.safe_load(CoreStorage().file('scripts.yaml'))
+            self.config = yaml.safe_load(MainStorage().file('scripts.yaml'))
 
     def config_dump(self) -> None:
         with self.lock:
-            yaml.safe_dump(self.config, CoreStorage().file('scripts.yaml', 'w+'))
+            yaml.safe_dump(self.config, MainStorage().file('scripts.yaml', 'w+'))
 
     @staticmethod
     def check_dependency_version_style(version_: str) -> bool:
@@ -432,11 +432,11 @@ class ScriptManager:
             if isinstance(script, str):
                 script: dict = self.index.get_script(script)
             module: ModuleType = importlib.import_module(os.path.relpath(script['_path']).replace('/', '.'))
-            self._destroy(module.__name__)
             if success := self._scan(script, module):
-                self.scripts[script['name']] = {k: v for k, v in script.items()}
+                self.scripts[script['name']] = script.copy()
                 self.scripts[script['name']]['_hash'] = dirhash(script['_path'], 'sha1')
                 self.scripts[script['name']]['_errors'] = 0
+                self.scripts[script['name']]['_module'] = module.__name__
             else:
                 self.log.warn(codes.Code(30502, script['name']))
             return success
@@ -447,6 +447,7 @@ class ScriptManager:
                 self.event_handler.delete(name)
                 if name in self.parsers:
                     del self.parsers[name]
+                self._destroy(self.scripts[name]['_module'])
                 del self.scripts[name]
                 return True
             else:
