@@ -1,19 +1,18 @@
-import io
 import os
 import threading
 import traceback
-from typing import Union, Optional
+from typing import Union, Optional, TextIO
 
 from termcolor import colored
 
 from . import codes
 from . import storage
-from . import tools
+from .tools import get_time, LogStorage
 
 print_lock: threading.Lock = threading.Lock()
 write_lock: threading.Lock = threading.Lock()
 
-file: Optional[io.TextIOWrapper] = None
+file: Optional[TextIO] = None
 
 
 class LoggerError(Exception):
@@ -36,14 +35,14 @@ class Logger:
     @staticmethod
     def format_msg(msg: Union[str, codes.Code]) -> str:
         if isinstance(msg, codes.Code):
-            return msg.format(storage.logger.message_content)
+            return msg.format(storage.logger.content)
         else:
             return msg
 
     def print(self, type_: int, msg: Union[str, codes.Code], parent: str = '') -> None:
         with print_lock:
             print(
-                f"[{tools.get_time(storage.logger.utc_time)}] [{colored(*self.types[type_])}] "
+                f"[{get_time()}] [{colored(*self.types[type_])}] "
                 f"[{f'{parent}>' if parent else ''}{self.name}]: {self.format_msg(msg)}"
             )
 
@@ -51,15 +50,16 @@ class Logger:
         with write_lock:
             global file
             try:
-                if not os.path.isfile(file.name):
+                if not LogStorage().check(file.name):
                     raise NameError
             except (NameError, AttributeError):
                 if not os.path.isdir(storage.main.logs_path):
                     os.makedirs(storage.main.logs_path)
-                file = open(f'{storage.main.logs_path}/{tools.get_time(storage.logger.utc_time, True)}.log', 'w+')
+                file = LogStorage().file(
+                    get_time(True) + '.log', 'w+')
             finally:
                 file.write(
-                    f"[{tools.get_time(storage.logger.utc_time)}] [{self.types[type_][0]}] "
+                    f"[{get_time()}] [{self.types[type_][0]}] "
                     f"[{f'{parent}>' if parent else ''}{self.name}]: {self.format_msg(msg)}\n"
                 )
                 file.flush()
@@ -113,7 +113,7 @@ class Logger:
         if storage.logger.mode == 1 or storage.logger.mode == 3:
             with print_lock:
                 print(colored(
-                    f'[{tools.get_time(storage.logger.utc_time)}] [FATAL] '
+                    f'[{get_time()}] [FATAL] '
                     f'[{f"{parent}>" if parent else ""}{self.name}]: {self.format_msg(msg)}',
                     'red',
                     attrs=['reverse']
@@ -127,7 +127,7 @@ class Logger:
         if storage.logger.mode == 1 or storage.logger.mode == 3:
             with print_lock:
                 print(colored(
-                    f'[{tools.get_time(storage.logger.utc_time)}] [FATAL] '
+                    f'[{get_time()}] [FATAL] '
                     f'[{f"{parent}>" if parent else ""}{self.name}]: '
                     f"{e.__class__.__name__}: {e!s}",
                     'red',

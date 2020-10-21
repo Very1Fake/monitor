@@ -1,9 +1,7 @@
-import abc
 import collections
-import os
 import threading
 from dataclasses import dataclass, field
-from typing import Any, List, Dict, Union, Tuple, TextIO
+from typing import Any, List, Dict, Union, Tuple
 
 import requests
 import ujson
@@ -11,10 +9,10 @@ import urllib3
 from requests import adapters, exceptions
 from requests.cookies import cookiejar_from_dict
 
-from . import codes
 from . import logger
 from . import storage
-from . import tools
+from .codes import Code
+from .tools import SmartGen, SmartGenType, MainStorage
 
 # TODO: Add export/import of Proxy.bad
 
@@ -132,11 +130,11 @@ class Scheduled:
 
 @dataclass
 class Smart:
-    gen: tools.SmartGenType = field(compare=False, repr=False)
+    gen: SmartGenType = field(compare=False, repr=False)
     expired: bool = field(init=False)
 
     def __post_init__(self):
-        if not issubclass(type(self.gen), tools.SmartGen):
+        if not issubclass(type(self.gen), SmartGen):
             raise TypeError('gen type must be subclass of SmartGen')
 
         self.expired = False
@@ -206,44 +204,6 @@ class Proxy:
 # Storage classes
 
 
-class Storage(abc.ABC):
-    __slots__ = '_path'
-    _path: str
-
-    def check_path(self) -> None:
-        if not os.path.isdir(self._path):
-            os.makedirs(self._path, mode=0o750)
-
-    def check(self, name: str) -> bool:
-        self.check_path()
-        return os.path.isfile(self._path + '/' + name)
-
-    def file(
-            self,
-            name: str,
-            mode: str = 'r',
-            buffering=-1,
-            encoding=None,
-            errors=None,
-            newline=None,
-            closefd=True,
-            opener=None
-    ) -> TextIO:
-        self.check_path()
-        return open(self._path + '/' + name, mode,
-                    buffering, encoding, errors, newline, closefd, opener)
-
-
-class CoreStorage(Storage):
-    def __init__(self):
-        self._path = os.path.abspath(storage.main.storage_path.rstrip('/') + '/core')
-
-
-class ScriptStorage(Storage):  # TODO: Dynamic storage path
-    def __init__(self, script: str):
-        self._path = os.path.abspath(f'{storage.main.storage_path.rstrip("/")}/scripts/{script}')
-
-
 class ProviderCore:
     lock: threading.RLock = threading.RLock()
     _proxies: Dict[str, Proxy] = {}
@@ -265,27 +225,27 @@ class Provider(ProviderCore):
 
     def proxy_test(self, proxy: Proxy, force: bool = False) -> bool:
         try:
-            self.log.info(codes.Code(21202, repr(proxy)))
+            self.log.info(Code(21202, repr(proxy)))
             if (code := requests.get(storage.provider.test_url, proxies=proxy.use(),
                                      timeout=storage.provider.proxy_timeout).status_code) != 200:
-                self.log.info(codes.Code(41202, repr(proxy)))
+                self.log.info(Code(41202, repr(proxy)))
                 if force:
                     return False
                 else:
                     raise ProviderError(f'Bad proxy ({code})')
         except (requests.ConnectionError, requests.Timeout):
-            self.log.info(codes.Code(41202, repr(proxy)))
+            self.log.info(Code(41202, repr(proxy)))
             if force:
                 return False
             else:
                 raise ProviderError(f'Proxy not available or too slow (timeout: {storage.provider.proxy_timeout})')
-        self.log.info(codes.Code(21203, repr(proxy)))
+        self.log.info(Code(21203, repr(proxy)))
         return True
 
     @staticmethod
     def proxy_file_check() -> None:
-        if CoreStorage().check('proxy.json'):
-            file = CoreStorage().file('proxy.json', 'r' if os.path.isfile('proxy.json') else 'w+').read()
+        if MainStorage().check('proxy.json'):
+            file = MainStorage().file('proxy.json', 'r' if MainStorage().check('proxy.json') else 'w+').read()
 
             if file:
                 try:
@@ -312,12 +272,12 @@ class Provider(ProviderCore):
                 except ValueError:
                     raise SyntaxError('Non JSON file')
             else:
-                ujson.dump({}, CoreStorage().file('proxy.json', 'w+'), indent=4)
+                ujson.dump({}, MainStorage().file('proxy.json', 'w+'), indent=4)
         else:
-            ujson.dump({}, CoreStorage().file('proxy.json', 'w+'), indent=4)
+            ujson.dump({}, MainStorage().file('proxy.json', 'w+'), indent=4)
 
     def proxy_dump(self) -> None:
-        with CoreStorage().file('proxy.json', 'w+') as f:
+        with MainStorage().file('proxy.json', 'w+') as f:
             proxies = {}
 
             for i in self._proxies.values():
@@ -328,12 +288,12 @@ class Provider(ProviderCore):
 
             ujson.dump(proxies, f, indent=4)
 
-        self.log.info(codes.Code(21201))
+        self.log.info(Code(21201))
 
     def proxy_load(self) -> Tuple[int, int, int]:
         self.proxy_file_check()
 
-        proxy = ujson.load(CoreStorage().file('proxy.json'))
+        proxy = ujson.load(MainStorage().file('proxy.json'))
         edited, new = 0, 0
 
         for k, v in proxy.items():
@@ -353,10 +313,10 @@ class Provider(ProviderCore):
                 else:
                     new += 1
             else:
-                self.log.error(codes.Code(41201, repr(p)))
+                self.log.error(Code(41201, repr(p)))
 
         if edited or new:
-            self.log.warn(codes.Code(31203, str([edited, new])))
+            self.log.warn(Code(31203, str([edited, new])))
 
         return len(self._proxies), edited, new
 
@@ -367,7 +327,7 @@ class Provider(ProviderCore):
             if self.proxy_test(p := Proxy(address, login, password)):
                 with self.lock:
                     self._proxies[address] = p
-                self.log.warn(codes.Code(31201))
+                self.log.warn(Code(31201))
                 return True
             else:
                 return False
@@ -376,7 +336,7 @@ class Provider(ProviderCore):
         if address in self._proxies:
             with self.lock:
                 del self._proxies[address]
-            self.log.warn(codes.Code(31202))
+            self.log.warn(Code(31202))
         else:
             raise KeyError('Proxy with this address not specified')
 
@@ -384,12 +344,12 @@ class Provider(ProviderCore):
         with self.lock:
             for i in self._proxies.values():
                 i.bad = 0
-        self.log.warn(codes.Code(31204))
+        self.log.warn(Code(31204))
 
     def proxy_clear(self):
         with self.lock:
             self._proxies.clear()
-        self.log.warn(codes.Code(31205))
+        self.log.warn(Code(31205))
 
 
 class SubProvider(ProviderCore):
@@ -457,8 +417,11 @@ class SubProvider(ProviderCore):
             sess.headers = headers
             sess.max_redirects = storage.sub_provider.max_redirects
             sess.params = params
-            sess.verify = False
+            sess.verify = storage.sub_provider.verify
             sess.mount('http://', adapters.HTTPAdapter(pool_maxsize=1, pool_connections=1))
+
+            if storage.sub_provider.compression:
+                sess.headers.update({'Accept-Encoding': storage.sub_provider.comp_type})
 
             for i in range(storage.sub_provider.max_retries):
                 try:
@@ -467,11 +430,178 @@ class SubProvider(ProviderCore):
                     if proxy:
                         proxy_.bad += 1
                         proxy_.stats = -1
-                    self._log.test(codes.Code(11301, f'{type(e)}: {e!s}'), threading.current_thread().name)
+                    self._log.test(Code(11301, f'{type(e)}: {e!s}'), threading.current_thread().name)
                     continue
                 except exceptions.RequestException as e:
-                    self._log.error(codes.Code(41301, f'{type(e)}: {e!s}'), threading.current_thread().name)
+                    self._log.error(Code(41301, f'{type(e)}: {e!s}'), threading.current_thread().name)
                     return False, e
                 else:
                     proxy_.stats = resp.elapsed.microseconds * 1000000
                     return True, resp
+
+
+class Keywords:
+    __slots__ = []
+    _lock: threading.RLock = threading.RLock()
+    _log: logger.Logger = logger.Logger('KW')
+
+    abs: list = []
+    pos: list = []
+    neg: list = []
+
+    @classmethod
+    def export(cls) -> dict:
+        with cls._lock:
+            return {'absolute': cls.abs, 'positive': cls.pos, 'negative': cls.neg}
+
+    @classmethod
+    def check(cls, string: str, divider: str = ' ') -> bool:
+        has_pos: bool = False
+        for i in string.split(divider):
+            if i.lower() in cls.abs:
+                return True
+            elif i.lower() in cls.neg:
+                return False
+            elif not has_pos and i.lower() in cls.pos:
+                has_pos = True
+        else:
+            return has_pos
+
+    @classmethod
+    def dump(cls) -> int:
+        with cls._lock:
+            cls._log.info(Code(21501))
+            if MainStorage().check('keywords.json'):
+                kw = ujson.load(MainStorage().file('keywords.json'))
+
+                if isinstance(kw, dict) and 'absolute' in kw and isinstance(kw['absolute'], list):
+                    cls.abs.sort()
+                    kw['absolute'].sort()
+                    if cls.abs == kw['absolute'] and 'positive' in kw and isinstance(kw['positive'], list):
+                        cls.pos.sort()
+                        kw['positive'].sort()
+                        if cls.pos == kw['positive'] and 'negative' in kw and isinstance(kw['negative'], list):
+                            cls.neg.sort()
+                            kw['negative'].sort()
+                            if cls.neg == kw['negative']:
+                                cls._log.info(Code(21504))
+                                return 1
+
+            ujson.dump(cls.export(), MainStorage().file('keywords.json', 'w+'), indent=2)
+            cls._log.info(Code(21502))
+            return 0
+
+    @classmethod
+    def sync(cls) -> int:
+        with cls._lock:
+            cls._log.info(Code(21503))
+            if MainStorage().check('keywords.json'):
+                kw = ujson.load(MainStorage().file('keywords.json'))
+
+                if isinstance(kw, dict):
+                    if 'absolute' in kw and isinstance(kw['absolute'], list):
+                        for i in kw['absolute']:
+                            cls.add_abs(i)
+                    if 'positive' in kw and isinstance(kw['positive'], list):
+                        for i in kw['positive']:
+                            cls.add_pos(i)
+                    if 'negative' in kw and isinstance(kw['negative'], list):
+                        for i in kw['negative']:
+                            cls.add_neg(i)
+                    cls._log.info(Code(21504))
+                    return 0
+                else:
+                    raise TypeError('keywords.json must be object')
+            else:
+                cls._log.warn(Code(31501))
+                ujson.dump({'absolute': [], 'positive': [], 'negative': []},
+                           MainStorage().file('keywords.json'), indent=2)
+                return 1
+
+    @classmethod
+    def clear(cls) -> int:
+        with cls._lock:
+            cls._log.info(Code(21505))
+            cls.abs.clear()
+            cls.pos.clear()
+            cls.neg.clear()
+            cls._log.info(Code(21506))
+            return 0
+
+    @classmethod
+    def load(cls) -> int:
+        with cls._lock:
+            cls._log.info(Code(21507))
+            cls.clear()
+            cls.sync()
+            cls._log.info(Code(21508))
+            return 0
+
+    @classmethod
+    def add_abs(cls, kw: str) -> int:
+        with cls._lock:
+            if isinstance(kw, str):
+                if kw in cls.abs:
+                    cls._log.warn(Code(31512, kw))
+                    return 2
+                else:
+                    cls.abs.append(kw)
+                    return 0
+            else:
+                cls._log.warn(Code(31511, kw))
+                return 1
+
+    @classmethod
+    def add_pos(cls, kw: str) -> int:
+        with cls._lock:
+            if isinstance(kw, str):
+                if kw in cls.pos:
+                    cls._log.warn(Code(31522, kw))
+                    return 2
+                else:
+                    cls.pos.append(kw)
+                    return 0
+            else:
+                cls._log.warn(Code(31521, kw))
+                return 1
+
+    @classmethod
+    def add_neg(cls, kw: str) -> int:
+        with cls._lock:
+            if isinstance(kw, str):
+                if kw in cls.neg:
+                    cls._log.warn(Code(31532, kw))
+                    return 2
+                else:
+                    cls.neg.append(kw)
+                    return 0
+            else:
+                cls._log.warn(Code(31531, kw))
+                return 1
+
+    @classmethod
+    def remove_abs(cls, kw: str) -> int:
+        with cls._lock:
+            if kw in cls.abs:
+                cls.abs.remove(kw)
+                return 0
+            else:
+                return 1
+
+    @classmethod
+    def remove_pos(cls, kw: str) -> int:
+        with cls._lock:
+            if kw in cls.pos:
+                cls.pos.remove(kw)
+                return 0
+            else:
+                return 1
+
+    @classmethod
+    def remove_neg(cls, kw: str) -> int:
+        with cls._lock:
+            if kw in cls.neg:
+                cls.neg.remove(kw)
+                return 0
+            else:
+                return 1

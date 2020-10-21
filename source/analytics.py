@@ -6,6 +6,7 @@ from statistics import mean
 import ujson
 
 from . import storage, core, __version__
+from .tools import ReportStorage
 
 
 class Analytics:
@@ -147,8 +148,7 @@ class Analytics:
         elif type_ == 2:
             suffix = 'final_'
 
-        ujson.dump(cls.snapshot(type_), open(
-            storage.analytics.path + f'/report_{suffix}'
-                                     f'{datetime.utcnow().strftime("%Y-%m-%d_%H:%M:%S")}.json',
+        ujson.dump(cls.snapshot(type_), ReportStorage().file(
+            f'/report_{suffix}_{datetime.utcnow().strftime("%Y-%m-%d_%H:%M:%S")}.json',
             'w+'
-        ), indent=2 if storage.analytics.beautify else None)
+        ), indent=2 if storage.analytics.beautify else 0)

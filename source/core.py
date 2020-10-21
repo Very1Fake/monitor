@@ -17,7 +17,7 @@ from . import logger
 from . import scripts
 from . import storage
 from .cache import UniquenessError, HashStorage
-from .library import PrioritizedItem, UniqueSchedule, Provider, CoreStorage
+from .library import PrioritizedItem, UniqueSchedule, Provider, MainStorage, Keywords
 
 
 # TODO: throw() for state setters
@@ -776,14 +776,15 @@ class Core:
         self.state = 1
 
         # Staring
-        HashStorage.load()  # Load success hashes from cache
         storage.config_load()  # Load ./config.yaml
-        script_manager.index.config_load()  # Load scripts.yaml
-        script_manager.event_handler.start()  # Start event loop
+        Keywords.load()
+        HashStorage.load()  # Load success hashes from cache
 
         if storage.main.production:  # Notify about production mode
             self.log.info(codes.Code(20101))
 
+        script_manager.index.config_load()  # Load scripts.yaml
+        script_manager.event_handler.start()  # Start event loop
         script_manager.index.reindex()  # Index scripts
         script_manager.load_all()  # Load scripts
 
@@ -813,10 +814,9 @@ class Core:
         finally:  # Stopping
             self.log.info(codes.Code(20103))
 
-            server.stop()  # Stop UCTP server
-            storage.config_dump()
-
             script_manager.event_handler.monitor_stopping()
+
+            server.stop()  # Stop UCTP server
 
             self.thread_manager.join(self.thread_manager.close())  # Stop pipeline and wait
 
@@ -833,6 +833,9 @@ class Core:
             HashStorage.unload()  # Dump success hashes
             self.log.info(codes.Code(20105))
 
+            Keywords.dump()
+            storage.config_dump()
+
             self.log.info(codes.Code(20106))
 
 
@@ -844,10 +847,10 @@ if __name__ == 'source.core':
     provider: Provider = Provider()
     server = uctp.peer.Peer(
         'monitor',
-        RSA.import_key(CoreStorage().file('monitor.pem').read()),
+        RSA.import_key(MainStorage().file('monitor.pem').read()),
         '0.0.0.0',
-        trusted=uctp.peer.Trusted(*yaml.safe_load(CoreStorage().file('authority.yaml'))['trusted']),
-        aliases=uctp.peer.Aliases(yaml.safe_load(CoreStorage().file('authority.yaml'))['aliases']),
+        trusted=uctp.peer.Trusted(*yaml.safe_load(MainStorage().file('authority.yaml'))['trusted']),
+        aliases=uctp.peer.Aliases(yaml.safe_load(MainStorage().file('authority.yaml'))['aliases']),
         auth_timeout=4,
         buffer=8192,
         error_handler=RemoteThreadHandler()
