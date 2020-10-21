@@ -1,8 +1,8 @@
 import time
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Iterator, TypeVar, TextIO
 from os import makedirs, path
+from typing import Iterator, TypeVar, TextIO
 
 from . import storage
 

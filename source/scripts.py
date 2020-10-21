@@ -17,7 +17,7 @@ from . import codes
 from . import logger
 from . import storage
 from . import version
-from .tools import get_time, MainStorage, ScriptStorage
+from .tools import MainStorage, ScriptStorage
 
 
 class ScriptNotFound(Exception):
