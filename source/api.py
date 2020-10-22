@@ -1,5 +1,5 @@
-import abc
 import hashlib
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from time import time
 from types import GeneratorType
@@ -63,7 +63,7 @@ class EventsExecutorError(Exception):
 
 
 @dataclass
-class Catalog(abc.ABC):
+class Catalog(ABC):
     script: str
 
     def __post_init__(self):
@@ -111,7 +111,7 @@ class CSmart(Smart, Catalog):
 
 
 @dataclass
-class Target(abc.ABC):
+class Target(ABC):
     name: str
     script: str
     data: Union[str, bytes, int, float, list, tuple, dict] = field(repr=False)
@@ -178,7 +178,7 @@ class TSmart(Smart, Target):
 
 
 @dataclass
-class RestockTarget(abc.ABC):
+class RestockTarget(ABC):
     script: str
     data: Union[str, bytes, int, float, list, tuple, dict] = field(repr=False)
     item: int = field(init=False, default=-1)
@@ -243,7 +243,7 @@ class RTSmart(Smart, RestockTarget):
 
 
 @dataclass
-class TargetEnd(abc.ABC):
+class TargetEnd(ABC):
     target: TargetType
     description: str = ''
 
@@ -384,7 +384,7 @@ class FooterItem:
         return hashlib.blake2s(self.text.encode() + self.url.encode()).digest()
 
 
-class Item(abc.ABC):
+class Item(ABC):
     url: str
     channel: str
     name: str
@@ -565,10 +565,36 @@ class IRestock(Item):
         super().__init__(name, channel, url, image, description, price, sizes, footer, fields, publish_time)
 
 
+# Message classes
+
+
+class Message(ABC):
+    __slots__ = ['channel', 'script', 'text']
+    channel: str
+    script: str
+    text: str
+
+    def __init__(self, text: str, script: str, channel: str = ''):
+        self.text = text
+        self.script = script
+        self.channel = channel
+
+
+MessageType = TypeVar('MessageType', bound=Message)
+
+
+class MInfo(Message):
+    pass
+
+
+class MAlert(Message):
+    pass
+
+
 # Script classes
 
 
-class Parser(abc.ABC):  # Class to implement by scripts with parser
+class Parser(ABC):  # Class to implement by scripts with parser
     name: str
     log: logger.Logger
     provider: SubProvider
@@ -584,16 +610,16 @@ class Parser(abc.ABC):  # Class to implement by scripts with parser
     def catalog(self) -> CatalogType:
         raise NotImplementedError
 
-    @abc.abstractmethod
+    @abstractmethod
     def execute(
             self,
             mode: int,
             content: Union[CatalogType, TargetType]
-    ) -> List[Union[CatalogType, TargetType, RestockTargetType, ItemType, TargetEndType]]:
+    ) -> List[Union[CatalogType, TargetType, ItemType, TargetEndType, MessageType]]:
         raise NotImplementedError
 
 
-class EventsExecutor(abc.ABC):
+class EventsExecutor(ABC):
     name: str
     log: logger.Logger
     storage: ScriptStorage
@@ -613,14 +639,8 @@ class EventsExecutor(abc.ABC):
 
     def e_alert(self, code: codes.Code, thread: str) -> None: ...
 
-    def e_item_announced(self, item: IAnnounce) -> None: ...
+    def e_item(self, item: ItemType) -> None: ...
 
-    def e_item_released(self, item: IRelease) -> None: ...
+    def e_target_end(self, target_end: TargetEndType) -> None: ...
 
-    def e_item_restock(self, item: IRestock) -> None: ...
-
-    def e_target_end_fail(self, target_end: TEFail) -> None: ...
-
-    def e_target_end_sold_out(self, target_end: TESoldOut) -> None: ...
-
-    def e_target_end_success(self, target_end: TESuccess) -> None: ...
+    def e_message(self, message: MessageType) -> None: ...
