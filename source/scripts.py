@@ -359,23 +359,14 @@ class EventHandler:
     def alert(self, code: codes.Code, thread: str) -> None:
         self.pool.put(('e_alert', (code, thread)))
 
-    def item_announced(self, item: api.IAnnounce) -> None:
-        self.pool.put(('e_item_announced', (item,)))
+    def item(self, item: api.ItemType) -> None:
+        self.pool.put(('e_item', (item,)))
 
-    def item_released(self, item: api.IRelease) -> None:
-        self.pool.put(('e_item_released', (item,)))
+    def target_end(self, target_end: api.TargetEndType) -> None:
+        self.pool.put(('e_target_end', (target_end,)))
 
-    def item_restock(self, item: api.IRestock) -> None:
-        self.pool.put(('e_item_restock', (item,)))
-
-    def target_end_failed(self, target_end: api.TEFail) -> None:
-        self.pool.put(('e_target_end_failed', (target_end,)))
-
-    def target_end_sold_out(self, target_end: api.TESoldOut) -> None:
-        self.pool.put(('e_target_end_sold_out', (target_end,)))
-
-    def target_end_success(self, target_end: api.TESuccess) -> None:
-        self.pool.put(('e_target_end_success', (target_end,)))
+    def message(self, message: api.MessageType) -> None:
+        self.pool.put(('e_message', (message,)))
 
 
 class ScriptManager:

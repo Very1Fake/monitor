@@ -344,11 +344,11 @@ class Resolver:
                 if isinstance(i, api.IAnnounce):
                     if HashStorage.check_item(i.hash(3), True):
                         HashStorage.add_announced_item(i.hash(3))
-                        script_manager.event_handler.item_announced(i)
+                        script_manager.event_handler.item(i)
                 elif isinstance(i, api.IRelease):
                     if HashStorage.check_item(i.hash(4)):
                         id_ = HashStorage.add_item(i)
-                        script_manager.event_handler.item_released(i)
+                        script_manager.event_handler.item(i)
 
                         if i.restock:
                             i.restock.id = id_
@@ -356,7 +356,7 @@ class Resolver:
                 elif isinstance(i, api.IRestock):
                     if HashStorage.check_item_id(i.id):
                         HashStorage.add_item(i, True)
-                        script_manager.event_handler.item_restock(i)
+                        script_manager.event_handler.item(i)
             elif issubclass(type(i), api.Catalog):
                 if not catalog:
                     catalog = i
@@ -367,13 +367,10 @@ class Resolver:
                     HashStorage.add_target(i.target.hash())
                 except UniquenessError:
                     pass
-
-                if isinstance(i, api.TEFail):
-                    script_manager.event_handler.target_end_failed(i)
-                elif isinstance(i, api.TESoldOut):
-                    script_manager.event_handler.target_end_sold_out(i)
-                elif isinstance(i, api.TESuccess):
-                    script_manager.event_handler.target_end_success(i)
+                else:
+                    script_manager.event_handler.target_end(i)
+            elif issubclass(type(i), api.Message):
+                script_manager.event_handler.message(i)
 
         if catalog:
             cls.remove_catalog(catalog.script)
