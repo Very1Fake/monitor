@@ -12,9 +12,10 @@ from typing import Optional
 
 import ujson
 
-from . import storage
-from .api import Size, Sizes, Item, ItemType
-from .tools import get_time, CacheStorage
+from src.models.api.item import Size, Sizes, Item, ItemType
+from src.utils import store
+from src.utils.protocol import get_time
+from src.utils.storage import CacheStorage
 
 
 class UniquenessError(Exception):
@@ -27,8 +28,8 @@ def check() -> None:
     Returns:
         None
     """
-    if not os.path.isdir(storage.cache.path):
-        os.makedirs(storage.cache.path)
+    if not os.path.isdir(store.cache.path):
+        os.makedirs(store.cache.path)
 
 
 class HashStorage:
@@ -77,7 +78,7 @@ type INTEGER NOT NULL, list TEXT NOT NULL);''')
     def unload(cls) -> None:
         with cls._lock, cls.__db as c:
             check()
-            c.backup(sqlite3.connect(f'{storage.cache.path}/hash.db'))
+            c.backup(sqlite3.connect(f'{store.cache.path}/hash.db'))
 
     @classmethod
     def load(cls) -> bool:
@@ -88,10 +89,10 @@ type INTEGER NOT NULL, list TEXT NOT NULL);''')
         """
         with cls._lock, cls.__db as c:
             check()
-            if os.path.isfile(f'{storage.cache.path}/hash.db'):
+            if os.path.isfile(f'{store.cache.path}/hash.db'):
                 cls._clear()
 
-                sqlite3.connect(f'{storage.cache.path}/hash.db').backup(c)
+                sqlite3.connect(f'{store.cache.path}/hash.db').backup(c)
                 return True
             else:
                 return False
@@ -119,7 +120,7 @@ type INTEGER NOT NULL, list TEXT NOT NULL);''')
         """
         with cls._lock, cls.__db as c:
             check()
-            c.backup(sqlite3.connect(f'{storage.cache.path}/hash_{get_time(name=True)}.db.backup'))
+            c.backup(sqlite3.connect(f'{store.cache.path}/hash_{get_time(name=True)}.db.backup'))
 
     @classmethod
     def delete(cls, table: str) -> None:
@@ -152,9 +153,9 @@ type INTEGER NOT NULL, list TEXT NOT NULL);''')
         """
         with cls._lock, cls.__db as c:
             cls.check()
-            c.execute('DELETE FROM Targets WHERE time<=?', (time.time() - storage.cache.target_time,))
-            c.execute('DELETE FROM AnnouncedItems WHERE time<=?', (time.time() - storage.cache.item_time,))
-            c.execute('DELETE FROM Items WHERE time<=?', (time.time() - storage.cache.item_time,))
+            c.execute('DELETE FROM Targets WHERE time<=?', (time.time() - store.cache.target_time,))
+            c.execute('DELETE FROM AnnouncedItems WHERE time<=?', (time.time() - store.cache.item_time,))
+            c.execute('DELETE FROM Items WHERE time<=?', (time.time() - store.cache.item_time,))
 
     @classmethod
     def add_target(cls, hash_: bytes) -> None:

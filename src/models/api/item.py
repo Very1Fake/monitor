@@ -1,17 +1,11 @@
-import hashlib
-from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from abc import ABC
+from dataclasses import dataclass
+from hashlib import blake2s
 from time import time
 from types import GeneratorType
-from typing import TypeVar, List, Union, Dict, Generator, Optional
+from typing import Dict, Generator, Optional, List, TypeVar, Union
 
-from . import codes
-from . import logger
-from .library import Interval, Scheduled, Smart, SubProvider
-from .tools import ScriptStorage
-
-# Constants
-
+from .target import RestockTarget, RestockTargetType
 
 CURRENCIES = {
     'AUD': 12,
@@ -48,230 +42,6 @@ SIZE_TYPES = {
 }
 
 
-# Error classes
-
-
-class ParserError(Exception):
-    pass
-
-
-class EventsExecutorError(Exception):
-    pass
-
-
-# Indexing
-
-
-@dataclass
-class Catalog(ABC):
-    script: str
-
-    def __post_init__(self):
-        if not isinstance(self.script, str):
-            raise TypeError('script must be str')
-
-    def __eq__(self, other):
-        if issubclass(type(other), Target):
-            if other.script == self.script:
-                return True
-            else:
-                return False
-        else:
-            return False
-
-    def hash(self) -> bytes:
-        return hashlib.blake2s(self.script.encode()).digest()
-
-    def __hash__(self) -> int:
-        return hash(self.hash())
-
-
-CatalogType = TypeVar('CatalogType', bound=Catalog)
-
-
-@dataclass
-class CInterval(Interval, Catalog):
-    def __eq__(self, other):
-        return Catalog.__eq__(self, other)
-
-
-@dataclass
-class CScheduled(Scheduled, Catalog):
-    def __eq__(self, other):
-        return Catalog.__eq__(self, other)
-
-
-@dataclass
-class CSmart(Smart, Catalog):
-    def __eq__(self, other):
-        return Catalog.__eq__(self, other)
-
-
-# Target classes
-
-
-@dataclass
-class Target(ABC):
-    name: str
-    script: str
-    data: Union[str, bytes, int, float, list, tuple, dict] = field(repr=False)
-    reused: int = field(init=False, compare=False, default=-1)
-
-    def __post_init__(self):
-        if not isinstance(self.name, str):
-            raise TypeError('name must be str')
-        if not isinstance(self.script, str):
-            raise TypeError('scripts must be str')
-        if not isinstance(self.data, (str, bytes, int, float, list, tuple, dict)):
-            raise TypeError('data must be (str bytes, int, float, list, tuple, dict)')
-
-    def __eq__(self, other):
-        if issubclass(type(other), Target):
-            if other.name == self.name and other.script == self.script and other.data == self.data:
-                return True
-            else:
-                return False
-        else:
-            return False
-
-    def reuse(self, max_: int) -> int:
-        if max_ > 0:
-            if self.reused >= max_:
-                self.reused = 0
-            else:
-                self.reused += 1
-        return self.reused
-
-    def hash(self) -> bytes:
-        return hashlib.blake2s(
-            self.name.encode() +
-            (self.data.encode() if isinstance(self.data, (str, bytes)) else str(self.data).encode()) +
-            self.script.encode()
-        ).digest()
-
-    def __hash__(self) -> int:
-        return hash(self.hash())
-
-
-TargetType = TypeVar('TargetType', bound=Target)
-
-
-@dataclass
-class TInterval(Interval, Target):
-    def __eq__(self, other):
-        return Target.__eq__(self, other)
-
-
-@dataclass
-class TScheduled(Scheduled, Target):
-    def __eq__(self, other):
-        return Target.__eq__(self, other)
-
-
-@dataclass
-class TSmart(Smart, Target):
-    def __eq__(self, other):
-        return Target.__eq__(self, other)
-
-
-# Restock Target classes
-
-
-@dataclass
-class RestockTarget(ABC):
-    script: str
-    data: Union[str, bytes, int, float, list, tuple, dict] = field(repr=False)
-    item: int = field(init=False, default=-1)
-    reused: int = field(init=False, default=-1)
-
-    def __post_init__(self):
-        if not isinstance(self.script, str):
-            raise TypeError('scripts must be str')
-        if not isinstance(self.data, (str, bytes, int, float, list, tuple, dict)):
-            raise TypeError('data must be (str bytes, int, float, list, tuple, dict)')
-
-    def __eq__(self, other):
-        if issubclass(type(other), RestockTarget):
-            if other.script == self.script and other.data == self.data and other.item == self.item:
-                return True
-            else:
-                return False
-        else:
-            return False
-
-    def reuse(self, max_: int) -> int:
-        if max_ > 0:
-            if self.reused >= max_:
-                self.reused = 0
-            else:
-                self.reused += 1
-        return self.reused
-
-    def hash(self) -> bytes:
-        return hashlib.blake2s(
-            self.script.encode() +
-            (self.data.encode() if isinstance(self.data, (str, bytes)) else str(self.data).encode()) +
-            str(self.item).encode()
-        ).digest()
-
-    def __hash__(self):
-        return hash(self.hash())
-
-
-RestockTargetType = TypeVar('RestockTargetType', bound=RestockTarget)
-
-
-@dataclass
-class RTInterval(Interval, RestockTarget):
-    def __eq__(self, other):
-        return RestockTarget.__eq__(self, other)
-
-
-@dataclass
-class RTScheduled(Scheduled, RestockTarget):
-    def __eq__(self, other):
-        return RestockTarget.__eq__(self, other)
-
-
-@dataclass
-class RTSmart(Smart, RestockTarget):
-    def __eq__(self, other):
-        return RestockTarget.__eq__(self, other)
-
-
-# Target EOF classes
-
-
-@dataclass
-class TargetEnd(ABC):
-    target: TargetType
-    description: str = ''
-
-    def __post_init__(self):
-        if not issubclass(type(self.target), Target):
-            raise TypeError('target must be Target\'s subclass')
-        if not isinstance(self.description, str):
-            raise TypeError('description must be str')
-
-
-TargetEndType = TypeVar('TargetEndType', bound=TargetEnd)
-
-
-class TEFail(TargetEnd):
-    pass
-
-
-class TESoldOut(TargetEnd):
-    pass
-
-
-class TESuccess(TargetEnd):
-    pass
-
-
-# Item classes
-
-
 @dataclass
 class Price:
     currency: int
@@ -298,7 +68,7 @@ class Price:
                 raise TypeError('old must be float')
 
     def hash(self) -> bytes:
-        return hashlib.blake2s(bytes(self.currency) + str(self.current).encode() + str(self.old).encode()).digest()
+        return blake2s(bytes(self.currency) + str(self.current).encode() + str(self.old).encode()).digest()
 
 
 @dataclass
@@ -313,7 +83,7 @@ class Size:
             raise TypeError('size must be str')
 
     def hash(self) -> bytes:
-        return hashlib.blake2s(self.size.encode() + self.url.encode()).digest()
+        return blake2s(self.size.encode() + self.url.encode()).digest()
 
     def export(self) -> list:
         return [self.size, self.url]
@@ -360,7 +130,7 @@ class Sizes(list):
             raise TypeError('Sizes can be extended only by Sizes')
 
     def hash(self) -> bytes:
-        hash_ = hashlib.blake2s(str(self.type).encode())
+        hash_ = blake2s(str(self.type).encode())
         for i in self:
             hash_.update(i.hash())
         return hash_.digest()
@@ -381,7 +151,7 @@ class FooterItem:
             raise TypeError('url must be str')
 
     def hash(self) -> bytes:
-        return hashlib.blake2s(self.text.encode() + self.url.encode()).digest()
+        return blake2s(self.text.encode() + self.url.encode()).digest()
 
 
 class Item(ABC):
@@ -489,7 +259,7 @@ class Item(ABC):
         else:
             raise TypeError('level must be int')
 
-        hash_ = hashlib.blake2s(self.url.encode() + self.channel.encode())
+        hash_ = blake2s(self.url.encode() + self.channel.encode())
 
         if level > 0:
             hash_.update(self.name.encode())
@@ -512,7 +282,7 @@ class IAnnounce(Item):
     pass
 
 
-class IRelease(Item):
+class IRelease(Item):  # TODO: Change RestockTarget creation mechanism (from kernel)
     restock: Optional[RestockTargetType]
 
     def __init__(
@@ -563,84 +333,3 @@ class IRestock(Item):
             raise TypeError('id_ must be int')
 
         super().__init__(name, channel, url, image, description, price, sizes, footer, fields, publish_time)
-
-
-# Message classes
-
-
-class Message(ABC):
-    __slots__ = ['channel', 'script', 'text']
-    channel: str
-    script: str
-    text: str
-
-    def __init__(self, text: str, script: str, channel: str = ''):
-        self.text = text
-        self.script = script
-        self.channel = channel
-
-
-MessageType = TypeVar('MessageType', bound=Message)
-
-
-class MInfo(Message):
-    pass
-
-
-class MAlert(Message):
-    pass
-
-
-# Script classes
-
-
-class Parser(ABC):  # Class to implement by scripts with parser
-    name: str
-    log: logger.Logger
-    provider: SubProvider
-    storage: ScriptStorage
-
-    def __init__(self, name: str, log: logger.Logger, provider_: SubProvider, storage: ScriptStorage):
-        self.name = name
-        self.log = log
-        self.provider = provider_
-        self.storage = storage
-
-    @property
-    def catalog(self) -> CatalogType:
-        raise NotImplementedError
-
-    @abstractmethod
-    def execute(
-            self,
-            mode: int,
-            content: Union[CatalogType, TargetType]
-    ) -> List[Union[CatalogType, TargetType, ItemType, TargetEndType, MessageType]]:
-        raise NotImplementedError
-
-
-class EventsExecutor(ABC):
-    name: str
-    log: logger.Logger
-    storage: ScriptStorage
-
-    def __init__(self, name: str, log: logger.Logger, storage: ScriptStorage):
-        self.name = name
-        self.log = log
-        self.storage = storage
-
-    def e_monitor_starting(self) -> None: ...
-
-    def e_monitor_started(self) -> None: ...
-
-    def e_monitor_stopping(self) -> None: ...
-
-    def e_monitor_stopped(self) -> None: ...
-
-    def e_alert(self, code: codes.Code, thread: str) -> None: ...
-
-    def e_item(self, item: ItemType) -> None: ...
-
-    def e_target_end(self, target_end: TargetEndType) -> None: ...
-
-    def e_message(self, message: MessageType) -> None: ...

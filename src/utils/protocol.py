@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Dict
 
 _codes: Dict[int, str] = {
@@ -26,7 +27,7 @@ _codes: Dict[int, str] = {
     20004: 'Thread closing',
     20005: 'Thread closed',
 
-    # Core (201xx)
+    # Kernel (201xx)
     20101: 'Production mode enabled',
     20102: 'Signal Interrupt',
     20103: 'Turning off',
@@ -64,7 +65,7 @@ _codes: Dict[int, str] = {
     20603: 'Config does not loaded (must be dict)',
     20604: 'Skipping script (config not detected)',
     20605: 'Skipping script (bad config)',
-    20606: 'Skipping script (script incompatible with core)',
+    20606: 'Skipping script (script incompatible with monitor)',
     20607: 'Skipping script (script in blacklist)',
     20608: 'Skipping script (script with this name is already indexed)',
     20609: 'N script(s) indexed',
@@ -221,7 +222,7 @@ _codes: Dict[int, str] = {
     # System (500xx)
     50000: 'Test fatal',
 
-    # Core (501xx)
+    # Kernel (501xx)
     50101: 'ThreadManager unexpectedly has turned off',
 
     # ThreadManager (502xx)
@@ -275,3 +276,7 @@ class Code:
             return f'C{self.code} {self.title}' + (f': {self.message}' if self.message else '')
         else:
             return f'C{self.code}'
+
+
+def get_time(name: bool = False) -> str:
+    return datetime.utcnow().strftime('%Y-%m-%d_%H:%M:%S' if name else '%Y-%m-%d %H:%M:%S')

@@ -3,8 +3,7 @@
 PYTHON=/usr/bin/python3.8
 
 init:
-	${PYTHON} -m pip install -r requirements.txt
-	${PYTHON} -m pip install -r scripts/requirements.txt
+	sudo ${PYTHON} -m pip install -r requirements.txt
 
 clean:
 	rm -r cache/

@@ -1,22 +1,9 @@
-import time
-from abc import ABC, abstractmethod
-from datetime import datetime
-from os import makedirs, path
-from typing import Iterator, TypeVar, TextIO
-
-from . import storage
-
-time_format: str = "%Y-%m-%d %H:%M:%S"
+from abc import abstractmethod, ABC
+from time import time
+from typing import Iterator, TypeVar
 
 
-# Functions
-
-
-def get_time(name: bool = False) -> str:
-    return datetime.strftime(datetime.utcnow(), time_format.replace(' ', '_') if name else time_format)
-
-
-# Classes
+# Smart generator classes
 
 
 class SmartGen(ABC):
@@ -83,7 +70,7 @@ class ExponentialSmart(SmartGen):
             if not isinstance(now, float):
                 raise TypeError('now must be float (ExponentialSmart)')
         else:
-            now = time.time()
+            now = time()
 
         for i in self.generator():
             if i > now:
@@ -123,63 +110,10 @@ class LinearSmart(SmartGen):
             if not isinstance(now, float):
                 raise TypeError('now must be float (LinearSmart)')
         else:
-            now = time.time()
+            now = time()
 
         for i in self.generator():
             if i > now:
                 return i
         else:
             return self.time
-
-
-class Storage(ABC):
-    __slots__ = 'path'
-    path: str
-
-    def check_path(self) -> None:
-        if not path.isdir(self.path):
-            makedirs(self.path, mode=0o750)
-
-    def check(self, name: str) -> bool:
-        self.check_path()
-        return path.isfile(self.path + '/' + name)
-
-    def file(
-            self,
-            name: str,
-            mode: str = 'r',
-            buffering=-1,
-            encoding=None,
-            errors=None,
-            newline=None,
-            closefd=True,
-            opener=None
-    ) -> TextIO:
-        self.check_path()
-        return open(self.path + '/' + name, mode,
-                    buffering, encoding, errors, newline, closefd, opener)
-
-
-class MainStorage(Storage):
-    def __init__(self):
-        self.path = path.abspath(storage.main.storage_path.rstrip('/') + '/main')
-
-
-class LogStorage(Storage):
-    def __init__(self):
-        self.path = path.abspath(storage.main.logs_path.rstrip('/'))
-
-
-class CacheStorage(Storage):
-    def __init__(self):
-        self.path = path.abspath(storage.cache.path.rstrip('/'))
-
-
-class ReportStorage(Storage):
-    def __init__(self):
-        self.path = path.abspath(storage.analytics.path.rstrip('/'))
-
-
-class ScriptStorage(Storage):
-    def __init__(self, script: str):
-        self.path = path.abspath(f'{storage.main.storage_path.rstrip("/")}/scripts/{script}')
