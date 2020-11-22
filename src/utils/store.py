@@ -1,178 +1,222 @@
-import os
-from typing import NamedTuple
+from io import TextIOWrapper
+from json import dumps as j_dump, loads as j_load
+from typing import Dict, Optional, Type
 
-import yaml
+from toml import dumps as t_dump, loads as t_load
+from yaml import safe_dump as y_dump, safe_load as y_load
 
-
-def _is_namedtuple(obj: object) -> bool:
-    if hasattr(obj, '_asdict') and hasattr(obj, '_fields'):
-        return True
-    else:
-        return False
+from src.utils.env import get_namespace
 
 
-def config_check() -> None:
-    if os.path.isfile('./config.yaml'):
-        conf: dict = yaml.safe_load(open('./config.yaml'))
-        if isinstance(conf, dict):
-            different = False
-            snapshot_: dict = snapshot()
-            for k, v in snapshot_.items():
-                if k not in conf or not isinstance(conf[k], type(v)):
-                    different = True
-                    conf[k] = v
-                elif isinstance(snapshot_[k], dict):
-                    for k2, v2 in snapshot_[k].items():
-                        if k2 not in conf[k] or not isinstance(conf[k][k2], type(v2)):
-                            different = True
-                            conf[k][k2] = v2
-            if different:
-                yaml.safe_dump(conf, open('./config.yaml', 'w+'))
-            return
-    yaml.safe_dump(snapshot(), open('./config.yaml', 'w+'))
+class SectionMeta(type):
+    def __new__(mcs, name, base, dct, **kwargs):
+        abc = kwargs.get('abc', False)
+
+        if not abc:
+            if '__annotations__' in dct:
+                dct['_fields'] = {}
+                if '__slots__' not in dct:
+                    dct['__slots__'] = []
+
+                for k, t in dct['__annotations__'].items():
+                    if k[0] != '_' and t in (bool, int, float, str, list, dict):
+                        j = dct.get(k, None)
+                        if j is None:
+                            raise ValueError('Section variable must have default value')
+                        elif isinstance(j, t):
+                            dct['__slots__'].append(k)
+                            dct['_fields'][k] = (j, t)
+                            del dct[k]
+                        else:
+                            raise TypeError('Section variable value does not match its type')
+                    else:
+                        raise TypeError(f'Section variable can be only (bool, int, float, str, list, dict, Field)')
+            else:
+                raise LookupError('Section must have at least one annotation')
+
+        try:
+            del dct['__annotations__']
+        except KeyError:
+            pass
+
+        return super().__new__(mcs, name, base, dct)
 
 
-def config_load() -> None:
-    config_check()
-    for k, v in yaml.safe_load(open('./config.yaml')).items():
-        if k in categories:
-            globals().update({k: globals()[k]._replace(**v)})
+class Section(metaclass=SectionMeta, abc=True):
+    __slots__ = ['_fields', '_name']
+    _fields: Dict[str, tuple]
+    _name: str
+
+    def __init__(self, **kwargs):
+        for k, v in self._fields.items():
+            setattr(self, k, kwargs.get(k, v[0]))
+
+    def __setattr__(self, key, value):
+        if key in self._fields:
+            if isinstance(value, self._fields[key][1]):
+                super().__setattr__(key, value)
+            else:
+                raise TypeError(f'Value does not match section variable type ({self._fields[key][1]})')
         else:
-            globals().update({k: v})
+            raise AttributeError(f'Section has not attribute {key}')
+
+    @property
+    def section(self):
+        if hasattr(self, '_name'):
+            return getattr(self, '_name')
+        else:
+            return self.__class__.__name__.lower()
+
+    @property
+    def fields(self):
+        return self._fields
+
+    @property
+    def has_secret(self) -> bool:
+        for i in self._fields.values():
+            if i[2]:
+                return True
+        else:
+            return False
+
+    @property
+    def asdict(self) -> dict:
+        d = {}
+        for i in self._fields:
+            d[i] = getattr(self, i)
+        return d
+
+    def __repr__(self) -> str:
+        return f'{self.__class__.__name__}({", ".join([f"{k}={v!r}" for k, v in self.asdict.items()])})'
+
+    def loads(self, source: Optional[str] = None, method: int = 1, **kwargs):
+        if method not in range(4):
+            raise IndexError('Method does not exist')
+
+        if method == 0:
+            source = {self.section: get_namespace(self.section, **kwargs)}
+        else:
+            if isinstance(source, str):
+                if method == 1:
+                    source = t_load(source, **kwargs)
+                elif method == 2:
+                    source = j_load(source, **kwargs)
+                elif method == 3:
+                    source = y_load(source)
+            else:
+                raise ValueError('Source must be str (for non-environment method)')
+
+        if self.section in source:
+            if isinstance(source[self.section], dict):
+                for k, v in source[self.section].items():
+                    try:
+                        setattr(self, k, v)
+                    except AttributeError:
+                        pass
+            else:
+                raise TypeError('Section in source must be dict')
+        else:
+            raise KeyError('Section not found in source')
+
+    def dumps(self, method: int = 1, **kwargs) -> str:
+        if method not in range(4):
+            raise IndexError('Method does not exist')
+
+        if method == 0:
+            raise NotImplementedError('Environment does not support export')
+
+        e = {self.section: self.asdict}
+
+        if method == 1:
+            return t_dump(e, **kwargs)
+        elif method == 2:
+            return j_dump(e, **kwargs)
+        elif method == 3:
+            return y_dump(e, **kwargs)
 
 
-def config_dump() -> None:
-    yaml.safe_dump(snapshot(), open('./config.yaml', 'w+'))
+class StoreMeta(type):
+    def __new__(mcs, name, base, dct, **kwargs):
+        abc = kwargs.get('abc', False)
+
+        if not abc:
+            if '__annotations__' in dct:
+                dct['_sections'] = {}
+                if '__slots__' not in dct:
+                    dct['__slots__'] = []
+
+                for k, t in dct['__annotations__'].items():
+                    if k[0] != '_' and issubclass(t, Section):
+                        if k in dct:
+                            raise AttributeError('Store section can be class variable')
+                        else:
+                            dct['__slots__'].append(k)
+                            dct['_sections'][k] = t
+                    else:
+                        raise TypeError(f'Store section must be Section')
+            else:
+                raise LookupError('Store must have at least one section')
+
+        try:
+            del dct['__annotations__']
+        except KeyError:
+            pass
+
+        return super().__new__(mcs, name, base, dct)
 
 
-class Main(NamedTuple):
-    production: bool = False  # If True monitor will try to avoid fatal errors as possible
-    logs_path: str = 'logs'
-    storage_path: str = 'storage'
+class Store(metaclass=StoreMeta, abc=True):
+    __slots__ = ['_sections']
+    _sections: Dict[str, Type[Section]]
 
+    def __init__(self):
+        for k, t in self._sections.items():
+            setattr(self, k, t())
 
-class Cache(NamedTuple):
-    path: str = 'cache'
-    item_time: int = 1209600
-    target_time: int = 604800  # How long save hashes of success & failed targets
+    @property
+    def sections(self):
+        return self._sections
 
+    def loads(self, source: str = None, method: int = 1, **kwargs):
+        if method not in range(4):
+            raise IndexError('Method does not exist')
+        if method != 0 and not isinstance(source, str):
+            raise ValueError('Source must be specified (for non-environment method)')
 
-class Analytics(NamedTuple):
-    path: str = 'reports'
-    datetime: bool = True  # True - all output time will presented as , False - all output time as timestamps
-    datetime_format: str = '%Y-%m-%d %H:%M:%S.%f'
-    beautify: bool = False
+        for i in self._sections:
+            getattr(self, i).loads(source, method, **kwargs)
 
+    def load(self, source: TextIOWrapper, method: int = 1, **kwargs):
+        if method not in range(4):
+            raise IndexError('Method does not exist')
+        if method != 0 and not isinstance(source, TextIOWrapper):
+            raise ValueError('Source must be specified (for non-environment method)')
 
-class ThreadManager(NamedTuple):
-    tick: float = 1.
-    lock_ticks: int = 16  # How much ticks lock can be acquired, then it will released
+        if isinstance(source, TextIOWrapper):
+            source = source.read()
+        else:
+            raise TypeError('Target must be opened file')
 
+        for i in self._sections:
+            getattr(self, i).loads(source, method, **kwargs)
 
-class Pipe(NamedTuple):
-    tick: float = .5  # Delta time for queue manage (in seconds)
-    wait: float = 10.  # Timeout to join() when turning off monitor (in seconds)
+    def dumps(self, method: int = 1, **kwargs) -> str:
+        if method not in range(4):
+            raise IndexError('Method does not exist')
+        if method == 0:
+            raise NotImplementedError('Environment does not support export')
 
+        e = {i: getattr(self, i).asdict for i in self._sections}
 
-class Worker(NamedTuple):
-    count: int = 5  # Max workers count in normal condition
-    tick: float = 1.  # Delta time for worker run loop
-    wait: float = 5.
+        if method == 1:
+            return t_dump(e, **kwargs)
+        elif method == 2:
+            return j_dump(e, **kwargs)
+        elif method == 3:
+            return y_dump(e, **kwargs)
 
-
-class CatalogWorker(NamedTuple):
-    count: int = 5
-    tick: float = 1.
-    wait: int = 7
-
-
-class Queues(NamedTuple):
-    catalog_queue_size: int = 256  # Size for catalog_queue (will be waiting if full)
-    catalog_queue_put_wait: float = 8.
-    target_queue_size: int = 512  # Size for target_queue (will be waiting if full)
-    target_queue_put_wait: float = 8.
-
-
-class Logger(NamedTuple):
-    content: int = 1  # (0 - Only code, 1 - Code & Message, 2 - Code & Title & Message
-    level: int = 4  # (5 - Test, 4 - Debug, 3 - Info, 2 - Warn, 1 - Error, 0 - Fatal)
-    mode: int = 1  # (0 - off, 1 - Console only, 2 - File only, 3 - Console & File)
-
-
-class Priority(NamedTuple):
-    CSmart: int = 10
-    CScheduled: int = 50
-    CInterval: int = 100
-    TSmart: list = [10, 0]
-    TScheduled: list = [50, 0]
-    TInterval: list = [100, 100]  # First value is base priority, second value is range (0 for static priority)
-    RTSmart: list = [10, 0]
-    RTScheduled: list = [50, 0]
-    RTInterval: list = [100, 100]  # First value is base priority, second value is range (0 for static priority)
-    catalog_default: int = 100
-    target_default: int = 1001
-
-
-class Provider(NamedTuple):
-    max_bad: int = 25
-    test_url: str = 'http://ip-api.com/json?fields=2154502'
-    proxy_timeout: float = 3.0
-
-
-class SubProvider(NamedTuple):
-    max_redirects: int = 5
-    max_retries: int = 3
-    connect_timeout: float = 1.
-    read_timeout: float = 2.
-    compression: bool = False
-    comp_type: str = 'gzip, deflate, br'
-    verify: bool = False
-
-
-class EventHandler(NamedTuple):
-    tick: float = .1
-    wait: float = 3.
-
-
-categories: tuple = (
-    'main',
-    'cache',
-    'analytics',
-    'thread_manager',
-    'pipe',
-    'worker',
-    'catalog_worker',
-    'queues',
-    'logger',
-    'priority',
-    'provider',
-    'sub_provider',
-    'event_handler'
-)
-
-# Global variables
-main: Main = Main()
-cache: Cache = Cache()
-analytics: Analytics = Analytics()
-thread_manager: ThreadManager = ThreadManager()
-pipe: Pipe = Pipe()
-worker: Worker = Worker()
-catalog_worker: CatalogWorker = CatalogWorker()
-queues: Queues = Queues()
-logger: Logger = Logger()
-priority: Priority = Priority()
-provider: Provider = Provider()
-sub_provider: SubProvider = SubProvider()
-event_handler: EventHandler = EventHandler()
-
-
-def snapshot() -> dict:
-    snapshot_: dict = {}
-    for k, v in globals().items():
-        if k in categories:
-            snapshot_[k] = v._asdict()
-    return snapshot_
-
-
-if __name__ == 'storage.storage':
-    config_check()
+    def dump(self, target: TextIOWrapper, method: int = 1, **kwargs):
+        if isinstance(target, TextIOWrapper):
+            target.write(self.dumps(method, **kwargs))
+        else:
+            raise TypeError('Target must be opened file with write access')

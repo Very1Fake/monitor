@@ -7,12 +7,12 @@ from yaml import safe_load
 from src.helpers.analytics import Analytics
 from src.helpers.commands import Commands
 from src.models.cache import HashStorage
-from src.models.provider import Provider
-from src.utils import store
 from src.models.keywords import Keywords
+from src.models.provider import Provider
+from src.store import conf, main
 from src.utils.log import Logger
 from src.utils.protocol import Code
-from src.utils.storage import MainStorage
+from src.utils.storage import KernelStorage
 from .remote import RemoteThreadHandler
 from .resolver import Resolver
 from .scripter import ScriptManager
@@ -66,10 +66,10 @@ class Kernel:
         else:
             self.remote = Peer(
                 'monitor',
-                RSA.import_key(MainStorage().file('monitor.pem').read()),
+                RSA.import_key(KernelStorage().file('monitor.pem').read()),
                 '0.0.0.0',
-                trusted=Trusted(*safe_load(MainStorage().file('authority.yaml'))['trusted']),
-                aliases=Aliases(safe_load(MainStorage().file('authority.yaml'))['aliases']),
+                trusted=Trusted(*safe_load(KernelStorage().file('authority.yaml'))['trusted']),
+                aliases=Aliases(safe_load(KernelStorage().file('authority.yaml'))['aliases']),
                 auth_timeout=4,
                 buffer=8192,
                 error_handler=RemoteThreadHandler(self.script_manager.event_handler)
@@ -81,11 +81,15 @@ class Kernel:
         self.state = 1
 
         # Staring
-        store.config_load()  # Load ./config.yaml
+        main.loads(method=0)
+
+        if KernelStorage().check('config.toml'):
+            conf.load(KernelStorage().file('config.toml'))  # Load ./config.yaml
+
         Keywords.load()
         HashStorage.load()  # Load success hashes from cache
 
-        if store.main.production:  # Notify about production mode
+        if main.production:  # Notify about production mode
             self.log.info(Code(20101))
 
         self.script_manager.index.config_load()  # Load scripts.yaml
@@ -138,6 +142,6 @@ class Kernel:
             self.log.info(Code(20105))
 
             Keywords.dump()
-            store.config_dump()
+            conf.dump(KernelStorage().file('config.toml', 'w+'))
 
             self.log.info(Code(20106))

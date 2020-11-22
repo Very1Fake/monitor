@@ -1,4 +1,4 @@
-urllib3==1.26.1
+urllib3==1.26.2
 termcolor==1.1.0
 requests==2.25.0
 packaging==20.4
@@ -7,4 +7,4 @@ uctp==1.0.0a6.dev1
 checksumdir==1.2.0
 pycryptodome==3.9.9
 PyYAML==5.3.1
-tomlkit==0.7.0
+toml==0.10.2

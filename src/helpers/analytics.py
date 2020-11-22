@@ -1,4 +1,3 @@
-import os
 import time
 from datetime import datetime
 from statistics import mean
@@ -9,7 +8,7 @@ from src import __version__
 from src.containers.scripter import ScriptManager
 from src.containers.thread_manager import ThreadManager
 from src.models.provider import Provider
-from src.utils import store
+from src.store import analytics
 from src.utils.storage import ReportStorage
 
 
@@ -25,11 +24,6 @@ class Analytics:
         self.script_manager = script_manager
         self.thread_manager = thread_manager
 
-    @staticmethod
-    def _check() -> None:
-        if not os.path.isdir(store.analytics.path):
-            os.makedirs(store.analytics.path)
-
     def info_workers(self) -> dict:
         with self.thread_manager.lock:
             return {
@@ -43,10 +37,10 @@ class Analytics:
                         'name': i.name,
                         'speed': i.speed,
                         'start_time': datetime.utcfromtimestamp(i.start_time).strftime(
-                            store.analytics.datetime_format
-                        ) if store.analytics.datetime else str(i.start_time),
+                            analytics.datetime_format
+                        ) if analytics.datetime else str(i.start_time),
                         'uptime': (datetime.utcnow() - datetime.utcfromtimestamp(i.start_time)).total_seconds() if
-                        store.analytics.datetime else str(time.time() - i.start_time)
+                        analytics.datetime else str(time.time() - i.start_time)
                     } for i in self.thread_manager.workers.values()
                 ]
             }
@@ -123,12 +117,12 @@ class Analytics:
         end_time = datetime.utcnow()
         return {
             'main': {
-                'start_time': self.start_time.strftime(store.analytics.datetime_format) if
-                store.analytics.datetime else str(self.start_time.timestamp()),
+                'start_time': self.start_time.strftime(analytics.datetime_format) if
+                analytics.datetime else str(self.start_time.timestamp()),
                 'uptime': str(end_time - self.start_time) if
-                store.analytics.datetime else (end_time - self.start_time).total_seconds(),
-                'end_time': end_time.strftime(store.analytics.datetime_format) if
-                store.analytics.datetime else end_time.timestamp(),
+                analytics.datetime else (end_time - self.start_time).total_seconds(),
+                'end_time': end_time.strftime(analytics.datetime_format) if
+                analytics.datetime else end_time.timestamp(),
                 'type': type_,
             },
             'scripts': {
@@ -146,8 +140,6 @@ class Analytics:
         }
 
     def dump(self, type_: int = 1) -> None:
-        self._check()
-
         suffix = ''
         if type_ == 0:
             suffix = 'first_'
@@ -157,4 +149,4 @@ class Analytics:
         ujson.dump(self.snapshot(type_), ReportStorage().file(
             f'/report_{suffix}_{datetime.utcnow().strftime("%Y-%m-%d_%H:%M:%S")}.json',
             'w+'
-        ), indent=2 if store.analytics.beautify else 0)
+        ), indent=2 if analytics.beautify else 0)

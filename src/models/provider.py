@@ -9,10 +9,10 @@ from requests.exceptions import ChunkedEncodingError, ConnectionError, ProxyErro
 from ujson import dump, load, loads
 
 from src.models.proxy import Proxy
-from src.utils import store
+from src.store import provider, sub_provider
 from src.utils.log import Logger
 from src.utils.protocol import Code
-from src.utils.storage import MainStorage
+from src.utils.storage import KernelStorage
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -54,8 +54,8 @@ class Provider(ProviderCore):
     def proxy_test(self, proxy: Proxy, force: bool = False) -> bool:
         try:
             self.log.info(Code(21202, repr(proxy)))
-            if (code := get(store.provider.test_url, proxies=proxy.use(),
-                            timeout=store.provider.proxy_timeout).status_code) != 200:
+            if (code := get(provider.test_url, proxies=proxy.use(),
+                            timeout=provider.proxy_timeout).status_code) != 200:
                 self.log.info(Code(41202, repr(proxy)))
                 if force:
                     return False
@@ -66,14 +66,14 @@ class Provider(ProviderCore):
             if force:
                 return False
             else:
-                raise ProviderError(f'Proxy not available or too slow (timeout: {store.provider.proxy_timeout})')
+                raise ProviderError(f'Proxy not available or too slow (timeout: {provider.proxy_timeout})')
         self.log.info(Code(21203, repr(proxy)))
         return True
 
     @staticmethod
     def proxy_file_check() -> None:
-        if MainStorage().check('proxy.json'):
-            file = MainStorage().file('proxy.json', 'r' if MainStorage().check('proxy.json') else 'w+').read()
+        if KernelStorage().check('proxy.json'):
+            file = KernelStorage().file('proxy.json', 'r' if KernelStorage().check('proxy.json') else 'w+').read()
 
             if file:
                 try:
@@ -100,12 +100,12 @@ class Provider(ProviderCore):
                 except ValueError:
                     raise SyntaxError('Non JSON file')
             else:
-                dump({}, MainStorage().file('proxy.json', 'w+'), indent=4)
+                dump({}, KernelStorage().file('proxy.json', 'w+'), indent=4)
         else:
-            dump({}, MainStorage().file('proxy.json', 'w+'), indent=4)
+            dump({}, KernelStorage().file('proxy.json', 'w+'), indent=4)
 
     def proxy_dump(self) -> None:
-        with MainStorage().file('proxy.json', 'w+') as f:
+        with KernelStorage().file('proxy.json', 'w+') as f:
             proxies = {}
 
             for i in self._proxies.values():
@@ -121,7 +121,7 @@ class Provider(ProviderCore):
     def proxy_load(self) -> Tuple[int, int, int]:
         self.proxy_file_check()
 
-        proxy = load(MainStorage().file('proxy.json'))
+        proxy = load(KernelStorage().file('proxy.json'))
         edited, new = 0, 0
 
         for k, v in proxy.items():
@@ -192,7 +192,7 @@ class SubProvider(ProviderCore):
 
     def _proxy(self) -> Proxy:
         with self.lock:
-            valid = [k for k, v in self._proxies.items() if v.bad < store.provider.max_bad]
+            valid = [k for k, v in self._proxies.items() if v.bad < provider.max_bad]
 
             if valid:
                 if self.pos >= len(valid) - 1:
@@ -243,15 +243,15 @@ class SubProvider(ProviderCore):
         with Session() as sess:
             sess.cookies = cookiejar_from_dict(cookies)
             sess.headers = headers
-            sess.max_redirects = store.sub_provider.max_redirects
+            sess.max_redirects = sub_provider.max_redirects
             sess.params = params
-            sess.verify = store.sub_provider.verify
+            sess.verify = sub_provider.verify
             sess.mount('http://', HTTPAdapter(pool_maxsize=1, pool_connections=1))
 
-            if store.sub_provider.compression:
-                sess.headers.update({'Accept-Encoding': store.sub_provider.comp_type})
+            if sub_provider.compression:
+                sess.headers.update({'Accept-Encoding': sub_provider.comp_type})
 
-            for i in range(store.sub_provider.max_retries):
+            for i in range(sub_provider.max_retries):
                 self._log.debug(f'Try #{i}')
                 try:
                     resp = sess.request(method, url, data=data)

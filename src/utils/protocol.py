@@ -80,8 +80,6 @@ _codes: Dict[int, str] = {
     # Logger (208xx)
     20801: 'Log level changed',
     20802: 'Log mode changed',
-    20803: 'Time changed to UTC',
-    20804: 'Time changed to local',
 
     # Resolver (209xx)
     20901: 'Successful target execution',
@@ -138,7 +136,6 @@ _codes: Dict[int, str] = {
     # Logger (308xx)
     30801: 'Meaningless level change (changing to the same value)',
     30802: 'Meaningless mode change (changing to the same value)',
-    30803: 'Meaningless time change (changing to the same value)',
 
     # Resolver (309xx)
     30901: 'Catalog lost while retrieving (script not loaded)',

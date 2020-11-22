@@ -6,12 +6,13 @@ from uctp.peer import Peer
 from src.containers.scripter import ScriptManager
 from src.containers.thread_manager import ThreadManager
 from src.models.cache import HashStorage
-from src.models.provider import Provider
-from src.utils import log
-from src.utils import store
 from src.models.keywords import Keywords
+from src.models.provider import Provider
+from src.store import conf
+from src.utils import log
 from src.utils.log import Logger
 from src.utils.protocol import Code
+from src.utils.storage import KernelStorage
 from .analytics import Analytics
 
 
@@ -184,60 +185,55 @@ class Commands:
 
     def config(self, peer: Peer) -> dict:
         self.log.info(Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))
-        return store.snapshot()
+        return conf.dumps(2)
 
     def config_categories(self, peer: Peer) -> list:
         self.log.info(Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))
-        return list(store.categories)
+        return list(conf.sections)
 
     def config_dump(self, peer: Peer) -> bool:
         self.log.info(Code(21101, f'{peer.name}: {inspect.stack()[0][3]}'))
-        store.config_dump()
+        conf.dump(KernelStorage().file('config.toml', 'w+'))
         self.log.info(Code(21102, f'{peer.name}: {inspect.stack()[0][3]}'))
         return True
 
     def config_load(self, peer: Peer) -> bool:
         self.log.info(Code(21101, f'{peer.name}: {inspect.stack()[0][3]}'))
-        store.config_load()
+        if KernelStorage().check('config.toml'):
+            conf.load(KernelStorage().file('config.toml'))
         self.log.info(Code(21102, f'{peer.name}: {inspect.stack()[0][3]}'))
         return True
 
-    def config_get(self, peer: Peer, namespace: str, key: str) -> Any:
+    def config_get(self, peer: Peer, section: str, key: str) -> Any:
         self.log.info(Code(21101, f'{peer.name}: {inspect.stack()[0][3]}'))
-        if not isinstance(namespace, str):
-            raise TypeError('namespace must be str')
+        if not isinstance(section, str):
+            raise TypeError('Section must be str')
         elif not isinstance(key, str):
-            raise TypeError('key must be str')
+            raise TypeError('Key must be str')
 
-        if namespace in store.categories:
-            if hasattr(getattr(store, namespace), key):
+        if section in conf.sections:
+            self.log.info(Code(21102, f'{peer.name}: {inspect.stack()[0][3]}'))
+            return getattr(getattr(conf, section), key)
+        else:
+            raise IndexError(f'Section "{section}" not found')
+
+    def config_set(self, peer: Peer, section: str, key: str, value: Any) -> bool:
+        self.log.info(Code(21101, f'{peer.name}: {inspect.stack()[0][3]}'))
+        if not isinstance(section, str):
+            raise TypeError('Section must be str')
+        elif not isinstance(key, str):
+            raise TypeError('Key must be str')
+
+        if section in conf.sections:
+            s = getattr(conf, section)
+            try:
+                setattr(s, key, type(getattr(s, key))(value))
                 self.log.info(Code(21102, f'{peer.name}: {inspect.stack()[0][3]}'))
-                return getattr(getattr(store, namespace), key)
-            else:
-                raise IndexError(f'"{key}" not found in "{namespace}"')
+                return True
+            except ValueError:
+                raise TypeError(f'Value type must be {type(getattr(s, key))}')
         else:
-            raise IndexError(f'Namespace "{namespace}" not found')
-
-    def config_set(self, peer: Peer, namespace: str, key: str, value: Any) -> bool:
-        self.log.info(Code(21101, f'{peer.name}: {inspect.stack()[0][3]}'))
-        if not isinstance(namespace, str):
-            raise TypeError('namespace must be str')
-        elif not isinstance(key, str):
-            raise TypeError('key must be str')
-
-        if namespace in store.categories:
-            if hasattr(getattr(store, namespace), key):
-                try:
-                    setattr(store, namespace, getattr(store, namespace)._replace(
-                        **{key: type(getattr(getattr(store, namespace), key))(value)}))
-                    self.log.info(Code(21102, f'{peer.name}: {inspect.stack()[0][3]}'))
-                    return True
-                except ValueError:
-                    raise TypeError(f'value type must be "{type(getattr(getattr(store, namespace), key))}"')
-            else:
-                raise IndexError(f'"{key}" not found in "{namespace}"')
-        else:
-            raise IndexError(f'Namespace "{namespace}" not found')
+            raise IndexError(f'Section "{section}" not found')
 
     def hash_storage_defrag(self, peer: Peer) -> bool:
         self.log.info(Code(21101, f'{peer.name}: {inspect.stack()[0][3]}'))

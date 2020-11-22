@@ -4,7 +4,7 @@ from ujson import dump, load
 
 from src.utils.log import Logger
 from src.utils.protocol import Code
-from src.utils.storage import MainStorage
+from src.utils.storage import KernelStorage
 
 
 class Keywords:
@@ -37,8 +37,8 @@ class Keywords:
     def dump(cls) -> int:
         with cls._lock:
             cls._log.info(Code(21501))
-            if MainStorage().check('keywords.json'):
-                kw = load(MainStorage().file('keywords.json'))
+            if KernelStorage().check('keywords.json'):
+                kw = load(KernelStorage().file('keywords.json'))
 
                 if isinstance(kw, dict) and 'absolute' in kw and isinstance(kw['absolute'], list):
                     cls.abs.sort()
@@ -53,7 +53,7 @@ class Keywords:
                                 cls._log.info(Code(21504))
                                 return 1
 
-            dump(cls.export(), MainStorage().file('keywords.json', 'w+'), indent=2)
+            dump(cls.export(), KernelStorage().file('keywords.json', 'w+'), indent=2)
             cls._log.info(Code(21502))
             return 0
 
@@ -61,8 +61,8 @@ class Keywords:
     def sync(cls) -> int:
         with cls._lock:
             cls._log.info(Code(21503))
-            if MainStorage().check('keywords.json'):
-                kw = load(MainStorage().file('keywords.json'))
+            if KernelStorage().check('keywords.json'):
+                kw = load(KernelStorage().file('keywords.json'))
 
                 if isinstance(kw, dict):
                     if 'absolute' in kw and isinstance(kw['absolute'], list):
@@ -81,7 +81,7 @@ class Keywords:
             else:
                 cls._log.warn(Code(31501))
                 dump({'absolute': [], 'positive': [], 'negative': []},
-                     MainStorage().file('keywords.json'), indent=2)
+                     KernelStorage().file('keywords.json'), indent=2)
                 return 1
 
     @classmethod

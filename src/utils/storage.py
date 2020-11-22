@@ -3,7 +3,7 @@ from os import makedirs
 from os.path import abspath, isdir, isfile
 from typing import TextIO
 
-from . import store
+from src.store import main
 
 
 class Storage(ABC):
@@ -34,18 +34,18 @@ class Storage(ABC):
                     buffering, encoding, errors, newline, closefd, opener)
 
 
-class MainStorage(Storage):
+class KernelStorage(Storage):
     """ Main storage where monitor's configs and keys are stored """
 
     def __init__(self):
-        self.path = abspath(store.main.storage_path.rstrip('/') + '/main')
+        self.path = abspath(main.mount.rstrip('/') + '/kernel')
 
 
 class LogStorage(Storage):
     """ A storage where .log files are stored """
 
     def __init__(self):
-        self.path = abspath(store.main.logs_path.rstrip('/'))
+        self.path = abspath(main.mount.rstrip('/') + '/logs')
 
 
 class CacheStorage(Storage):
@@ -56,7 +56,7 @@ class CacheStorage(Storage):
     """
 
     def __init__(self):
-        self.path = abspath(store.cache.path.rstrip('/'))
+        self.path = abspath(main.mount.rstrip('/') + '/cache')
 
 
 class ReportStorage(Storage):
@@ -67,11 +67,11 @@ class ReportStorage(Storage):
     """
 
     def __init__(self):
-        self.path = abspath(store.analytics.path.rstrip('/'))
+        self.path = abspath(main.mount.rstrip('/') + '/report')
 
 
 class ScriptStorage(Storage):
     """ A storage where scripts can store their own files (e.g. secret.yaml) """
 
     def __init__(self, script: str):
-        self.path = abspath(f'{store.main.storage_path.rstrip("/")}/scripts/{script}')
+        self.path = abspath(f'{main.mount.rstrip("/")}/scripts/{script}')

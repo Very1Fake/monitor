@@ -4,7 +4,7 @@ from typing import Dict
 
 from src.models.api.catalog import Catalog
 from src.models.cache import HashStorage
-from src.utils import store
+from src.store import pipe, queue
 from src.utils.protocol import Code
 from src.utils.schedule import PrioritizedItem
 from src.utils.thread import ThreadClass
@@ -70,7 +70,7 @@ class Pipe(ThreadClass):
                         try:
                             self.resolver.catalog_queue.put(
                                 PrioritizedItem(self.resolver.catalog_priority(i), i),
-                                timeout=store.queues.catalog_queue_size
+                                timeout=queue.catalog_queue_size
                             )
                         except Full:  # TODO: Fix (catalog can't be lost)
                             self._log.warn(Code(30302, i))
@@ -79,7 +79,7 @@ class Pipe(ThreadClass):
                         try:
                             self.resolver.target_queue.put(
                                 PrioritizedItem(self.resolver.target_priority(i), i),
-                                timeout=store.queues.target_queue_put_wait
+                                timeout=queue.target_queue_put_wait
                             )
                         except Full:
                             self._log.warn(Code(30303, i))
@@ -99,4 +99,4 @@ class Pipe(ThreadClass):
                 self._log.info(Code(20005))
                 break
             delta: float = time() - start
-            sleep(store.pipe.tick - delta if store.pipe.tick - delta > 0 else 0)
+            sleep(pipe.tick - delta if pipe.tick - delta > 0 else 0)

@@ -4,7 +4,6 @@
 
 """
 
-import os
 import sqlite3
 import threading
 import time
@@ -13,23 +12,13 @@ from typing import Optional
 import ujson
 
 from src.models.api.item import Size, Sizes, Item, ItemType
-from src.utils import store
+from src.store import cache
 from src.utils.protocol import get_time
 from src.utils.storage import CacheStorage
 
 
 class UniquenessError(Exception):
     pass
-
-
-def check() -> None:
-    """Create cache/ if not exists
-
-    Returns:
-        None
-    """
-    if not os.path.isdir(store.cache.path):
-        os.makedirs(store.cache.path)
 
 
 class HashStorage:
@@ -77,8 +66,7 @@ type INTEGER NOT NULL, list TEXT NOT NULL);''')
     @classmethod
     def unload(cls) -> None:
         with cls._lock, cls.__db as c:
-            check()
-            c.backup(sqlite3.connect(f'{store.cache.path}/hash.db'))
+            c.backup(sqlite3.connect(f'{CacheStorage().path}/hash.db'))
 
     @classmethod
     def load(cls) -> bool:
@@ -88,11 +76,10 @@ type INTEGER NOT NULL, list TEXT NOT NULL);''')
             :obj:`bool`: ``True`` if successful load, otherwise ``False`` if ``cache/hash.db`` not exists
         """
         with cls._lock, cls.__db as c:
-            check()
-            if os.path.isfile(f'{store.cache.path}/hash.db'):
+            if CacheStorage().check('hash.db'):
                 cls._clear()
 
-                sqlite3.connect(f'{store.cache.path}/hash.db').backup(c)
+                sqlite3.connect(f'{CacheStorage().path}/hash.db').backup(c)
                 return True
             else:
                 return False
@@ -105,7 +92,6 @@ type INTEGER NOT NULL, list TEXT NOT NULL);''')
             None
         """
         with cls._lock, cls.__db as c:
-            check()
             f = CacheStorage().file(f'hash_{get_time(name=True)}.sql', 'w+')
             for i in c.iterdump():
                 f.write(i + '\n')
@@ -120,7 +106,7 @@ type INTEGER NOT NULL, list TEXT NOT NULL);''')
         """
         with cls._lock, cls.__db as c:
             check()
-            c.backup(sqlite3.connect(f'{store.cache.path}/hash_{get_time(name=True)}.db.backup'))
+            c.backup(sqlite3.connect(f'{cache.path}/hash_{get_time(name=True)}.db.backup'))
 
     @classmethod
     def delete(cls, table: str) -> None:
@@ -153,9 +139,9 @@ type INTEGER NOT NULL, list TEXT NOT NULL);''')
         """
         with cls._lock, cls.__db as c:
             cls.check()
-            c.execute('DELETE FROM Targets WHERE time<=?', (time.time() - store.cache.target_time,))
-            c.execute('DELETE FROM AnnouncedItems WHERE time<=?', (time.time() - store.cache.item_time,))
-            c.execute('DELETE FROM Items WHERE time<=?', (time.time() - store.cache.item_time,))
+            c.execute('DELETE FROM Targets WHERE time<=?', (time.time() - cache.target,))
+            c.execute('DELETE FROM AnnouncedItems WHERE time<=?', (time.time() - cache.item,))
+            c.execute('DELETE FROM Items WHERE time<=?', (time.time() - cache.item,))
 
     @classmethod
     def add_target(cls, hash_: bytes) -> None:

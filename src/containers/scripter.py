@@ -18,10 +18,10 @@ from src.models.api.item import ItemType
 from src.models.api.message import MessageType
 from src.models.api.target import TargetEndType
 from src.models.provider import SubProvider
-from src.utils import store
+from src.store import event_handler, main
 from src.utils.log import Logger
 from src.utils.protocol import Code
-from src.utils.storage import MainStorage, ScriptStorage
+from src.utils.storage import KernelStorage, ScriptStorage
 
 
 # Exceptions
@@ -64,8 +64,8 @@ class ScriptIndex:
 
     def config_check(self) -> None:
         with self.lock:
-            if MainStorage().file('scripts.yaml'):
-                conf = safe_load(MainStorage().file('scripts.yaml'))
+            if KernelStorage().file('scripts.yaml'):
+                conf = safe_load(KernelStorage().file('scripts.yaml'))
                 if isinstance(conf, dict):
                     different = False
                     for k, v in self.config.items():
@@ -78,19 +78,19 @@ class ScriptIndex:
                                     different = True
                                     conf[k][k2] = v2
                     if different:
-                        safe_dump(conf, MainStorage().file('scripts.yaml', 'w+'))
+                        safe_dump(conf, KernelStorage().file('scripts.yaml', 'w+'))
                     else:
                         return
-            safe_dump(self.config, MainStorage().file('scripts.yaml', 'w+'))
+            safe_dump(self.config, KernelStorage().file('scripts.yaml', 'w+'))
 
     def config_load(self) -> None:
         with self.lock:
             self.config_check()
-            self.config = safe_load(MainStorage().file('scripts.yaml'))
+            self.config = safe_load(KernelStorage().file('scripts.yaml'))
 
     def config_dump(self) -> None:
         with self.lock:
-            safe_dump(self.config, MainStorage().file('scripts.yaml', 'w+'))
+            safe_dump(self.config, KernelStorage().file('scripts.yaml', 'w+'))
 
     @staticmethod
     def check_dependency_version_style(version_: str) -> bool:
@@ -311,7 +311,7 @@ class EventHandler:
                         except AttributeError:
                             pass
                         except Exception as e:
-                            if store.main.production:
+                            if main.production:
                                 self._log.error(Code(40701, f'{k}: {e.__class__.__name__}: {e!s}'))
                             else:
                                 self._log.fatal_msg(Code(40701, k), format_exc())
@@ -320,7 +320,7 @@ class EventHandler:
                     break
 
             delta = time() - start
-            sleep(store.event_handler.tick - delta if store.event_handler.tick - delta > 0 else 0)
+            sleep(event_handler.tick - delta if event_handler.tick - delta > 0 else 0)
 
     def start(self):
         self._log.info(Code(20701))
@@ -339,7 +339,7 @@ class EventHandler:
         self._log.info(Code(20703))
         if self.thread.is_alive():
             self._active = False
-            self.thread.join(store.event_handler.wait)
+            self.thread.join(event_handler.wait)
             self._log.info(Code(20704))
         else:
             self._log.warn(Code(30702))
@@ -497,7 +497,7 @@ class ScriptManager:
                     self.log.info(Code(20501, script['name']))
                     return True, 20501
             except ImportError as e:
-                if store.main.production:
+                if main.production:
                     self.log.error(Code(40501, script['name']))
                 else:
                     self.log.fatal(e)
@@ -532,7 +532,7 @@ class ScriptManager:
                 if self._load(i):
                     self.log.info(Code(20501, i))
             except ImportError as e:
-                if store.main.production:
+                if main.production:
                     self.log.error(Code(40501, i))
                 else:
                     self.log.fatal(e)

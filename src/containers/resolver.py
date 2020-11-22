@@ -10,7 +10,7 @@ from src.models.api.message import Message
 from src.models.api.target import Target, RestockTarget, TargetEnd, TargetType, RestockTargetType, TInterval, \
     TScheduled, TSmart, RTInterval, RTScheduled, RTSmart
 from src.models.cache import HashStorage, UniquenessError
-from src.utils import store
+from src.store import main, priority, queue
 from src.utils.log import Logger
 from src.utils.protocol import Code
 from src.utils.schedule import UniqueSchedule
@@ -38,9 +38,9 @@ class Resolver:
         self.catalog_lock = RLock()
         self.target_lock = RLock()
 
-        self.catalog_queue = PriorityQueue(store.queues.catalog_queue_size)
+        self.catalog_queue = PriorityQueue(queue.catalog_queue_size)
         self.catalogs = UniqueSchedule()
-        self.target_queue = PriorityQueue(store.queues.target_queue_size)
+        self.target_queue = PriorityQueue(queue.target_queue_size)
         self.targets = UniqueSchedule()
 
         self.script_manager = script_manager
@@ -48,30 +48,30 @@ class Resolver:
     @staticmethod
     def catalog_priority(catalog: CatalogType) -> int:
         if isinstance(catalog, CSmart):
-            return store.priority.CSmart
+            return priority.CSmart
         elif isinstance(catalog, CScheduled):
-            return store.priority.CScheduled
+            return priority.CScheduled
         elif isinstance(catalog, CInterval):
-            return store.priority.CInterval
+            return priority.CInterval
         else:
-            return store.priority.catalog_default
+            return priority.catalog_default
 
     @staticmethod
     def target_priority(target: Union[TargetType, RestockTargetType]) -> int:
         if isinstance(target, TSmart):
-            return store.priority.TSmart[0] + target.reuse(store.priority.TSmart[1])
+            return priority.TSmart[0] + target.reuse(priority.TSmart[1])
         elif isinstance(target, TScheduled):
-            return store.priority.TScheduled[0] + target.reuse(store.priority.TScheduled[1])
+            return priority.TScheduled[0] + target.reuse(priority.TScheduled[1])
         elif isinstance(target, TInterval):
-            return store.priority.TInterval[0] + target.reuse(store.priority.TInterval[1])
+            return priority.TInterval[0] + target.reuse(priority.TInterval[1])
         elif isinstance(target, RTSmart):
-            return store.priority.RTSmart[0] + target.reuse(store.priority.RTSmart[1])
+            return priority.RTSmart[0] + target.reuse(priority.RTSmart[1])
         elif isinstance(target, RTScheduled):
-            return store.priority.RTScheduled[0] + target.reuse(store.priority.RTScheduled[1])
+            return priority.RTScheduled[0] + target.reuse(priority.RTScheduled[1])
         elif isinstance(target, RTInterval):
-            return store.priority.RTInterval[0] + target.reuse(store.priority.RTInterval[1])
+            return priority.RTInterval[0] + target.reuse(priority.RTInterval[1])
         else:
-            return store.priority.target_default
+            return priority.target_default
 
     def insert_catalog(self, catalog: CatalogType, force: bool = False) -> None:
         with self.catalog_lock:
@@ -103,7 +103,7 @@ class Resolver:
                         elif isinstance(catalog, CInterval):
                             self.catalogs[time() + catalog.interval] = catalog
                 else:
-                    if store.main.production:
+                    if main.production:
                         self.log.error(Code(40901, catalog), current_thread().name)
                     else:
                         self.log.fatal(ResolverError(Code(40901, catalog)),

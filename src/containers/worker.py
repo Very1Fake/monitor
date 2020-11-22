@@ -1,6 +1,6 @@
 from time import sleep, time
 
-from src.utils import store
+from src.store import catalog_worker, worker
 from src.utils.protocol import Code
 from src.utils.thread import ThreadClass
 from .resolver import Resolver
@@ -66,7 +66,7 @@ class Worker(ThreadClass):
                 break
             delta: float = time() - start
             self.speed = 0 if self.idle else round(1 / delta, 3)
-            sleep(store.worker.tick - delta if store.worker.tick - delta > 0 else 0)
+            sleep(worker.tick - delta if worker.tick - delta > 0 else 0)
 
 
 class CatalogWorker(ThreadClass):
@@ -117,4 +117,4 @@ class CatalogWorker(ThreadClass):
                 break
             delta: float = time() - start
             self.speed = 0 if self.idle else round(1 / delta, 3)
-            sleep(store.catalog_worker.tick - delta if store.catalog_worker.tick - delta > 0 else 0)
+            sleep(catalog_worker.tick - delta if catalog_worker.tick - delta > 0 else 0)
