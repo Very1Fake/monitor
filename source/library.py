@@ -12,7 +12,7 @@ from requests.cookies import cookiejar_from_dict
 from . import logger
 from . import storage
 from .codes import Code
-from .tools import SmartGen, SmartGenType, MainStorage
+from .tools import SmartGen, SmartGenType, MainStorage, ScriptStorage
 
 # TODO: Add export/import of Proxy.bad
 
@@ -441,167 +441,169 @@ class SubProvider(ProviderCore):
 
 
 class Keywords:
-    __slots__ = []
-    _lock: threading.RLock = threading.RLock()
-    _log: logger.Logger = logger.Logger('KW')
+    __slots__ = ['abs', 'pos', 'neg', 'store', '_log', '_lock']
+    _log: logger.Logger
+    _lock: threading.RLock
 
-    abs: list = []
-    pos: list = []
-    neg: list = []
+    abs: list
+    pos: list
+    neg: list
 
-    @classmethod
-    def export(cls) -> dict:
-        with cls._lock:
-            return {'absolute': cls.abs, 'positive': cls.pos, 'negative': cls.neg}
+    store: ScriptStorage
 
-    @classmethod
-    def check(cls, string: str, divider: str = ' ') -> bool:
+    def __init__(self, script: str):
+        self._log = logger.Logger(f'KW/{script}')
+        self._lock = threading.RLock()
+
+        self.abs = []
+        self.pos = []
+        self.neg = []
+
+        self.store = ScriptStorage(script)
+
+        self.load()
+
+    def export(self) -> dict:
+        with self._lock:
+            return {'absolute': self.abs, 'positive': self.pos, 'negative': self.neg}
+
+    def check(self, s: str, div: str = ' ') -> bool:
         has_pos: bool = False
-        for i in string.split(divider):
-            if i.lower() in cls.abs:
+        for i in s.split(div):
+            if i.lower() in self.abs:
                 return True
-            elif i.lower() in cls.neg:
+            elif i.lower() in self.neg:
                 return False
-            elif not has_pos and i.lower() in cls.pos:
+            elif not has_pos and i.lower() in self.pos:
                 has_pos = True
         else:
             return has_pos
 
-    @classmethod
-    def dump(cls) -> int:
-        with cls._lock:
-            cls._log.info(Code(21501))
-            if MainStorage().check('keywords.json'):
-                kw = ujson.load(MainStorage().file('keywords.json'))
+    def dump(self) -> int:
+        with self._lock:
+            self._log.info(Code(21501))
+            if self.store.check('keywords.json'):
+                kw = ujson.load(self.store.file('keywords.json'))
 
                 if isinstance(kw, dict) and 'absolute' in kw and isinstance(kw['absolute'], list):
-                    cls.abs.sort()
+                    self.abs.sort()
                     kw['absolute'].sort()
-                    if cls.abs == kw['absolute'] and 'positive' in kw and isinstance(kw['positive'], list):
-                        cls.pos.sort()
+                    if self.abs == kw['absolute'] and 'positive' in kw and isinstance(kw['positive'], list):
+                        self.pos.sort()
                         kw['positive'].sort()
-                        if cls.pos == kw['positive'] and 'negative' in kw and isinstance(kw['negative'], list):
-                            cls.neg.sort()
+                        if self.pos == kw['positive'] and 'negative' in kw and isinstance(kw['negative'], list):
+                            self.neg.sort()
                             kw['negative'].sort()
-                            if cls.neg == kw['negative']:
-                                cls._log.info(Code(21504))
+                            if self.neg == kw['negative']:
+                                self._log.info(Code(21504))
                                 return 1
 
-            ujson.dump(cls.export(), MainStorage().file('keywords.json', 'w+'), indent=2)
-            cls._log.info(Code(21502))
+            ujson.dump(self.export(), self.store.file('keywords.json', 'w+'), indent=2)
+            self._log.info(Code(21502))
             return 0
 
-    @classmethod
-    def sync(cls) -> int:
-        with cls._lock:
-            cls._log.info(Code(21503))
-            if MainStorage().check('keywords.json'):
-                kw = ujson.load(MainStorage().file('keywords.json'))
+    def sync(self) -> int:
+        with self._lock:
+            self._log.info(Code(21505))
+            if self.store.check('keywords.json'):
+                kw = ujson.load(self.store.file('keywords.json'))
 
                 if isinstance(kw, dict):
                     if 'absolute' in kw and isinstance(kw['absolute'], list):
                         for i in kw['absolute']:
-                            cls.add_abs(i)
+                            self.add_abs(i)
                     if 'positive' in kw and isinstance(kw['positive'], list):
                         for i in kw['positive']:
-                            cls.add_pos(i)
+                            self.add_pos(i)
                     if 'negative' in kw and isinstance(kw['negative'], list):
                         for i in kw['negative']:
-                            cls.add_neg(i)
-                    cls._log.info(Code(21504))
+                            self.add_neg(i)
+                    self._log.info(Code(21506))
                     return 0
                 else:
                     raise TypeError('keywords.json must be object')
             else:
-                cls._log.warn(Code(31501))
+                self._log.warn(Code(31501))
                 ujson.dump({'absolute': [], 'positive': [], 'negative': []},
-                           MainStorage().file('keywords.json'), indent=2)
+                           self.store.file('keywords.json', 'w+'), indent=2)
                 return 1
 
-    @classmethod
-    def clear(cls) -> int:
-        with cls._lock:
-            cls._log.info(Code(21505))
-            cls.abs.clear()
-            cls.pos.clear()
-            cls.neg.clear()
-            cls._log.info(Code(21506))
+    def clear(self) -> int:
+        with self._lock:
+            self._log.info(Code(21503))
+            self.abs.clear()
+            self.pos.clear()
+            self.neg.clear()
+            self._log.info(Code(21504))
             return 0
 
-    @classmethod
-    def load(cls) -> int:
-        with cls._lock:
-            cls._log.info(Code(21507))
-            cls.clear()
-            cls.sync()
-            cls._log.info(Code(21508))
+    def load(self) -> int:
+        with self._lock:
+            self._log.info(Code(21507))
+            self.clear()
+            self.sync()
+            self._log.info(Code(21508))
             return 0
 
-    @classmethod
-    def add_abs(cls, kw: str) -> int:
-        with cls._lock:
+    def add_abs(self, kw: str) -> int:
+        with self._lock:
             if isinstance(kw, str):
-                if kw in cls.abs:
-                    cls._log.warn(Code(31512, kw))
+                if kw in self.abs:
+                    self._log.warn(Code(31512, kw))
                     return 2
                 else:
-                    cls.abs.append(kw)
+                    self.abs.append(kw)
                     return 0
             else:
-                cls._log.warn(Code(31511, kw))
+                self._log.warn(Code(31511, kw))
                 return 1
 
-    @classmethod
-    def add_pos(cls, kw: str) -> int:
-        with cls._lock:
+    def add_pos(self, kw: str) -> int:
+        with self._lock:
             if isinstance(kw, str):
-                if kw in cls.pos:
-                    cls._log.warn(Code(31522, kw))
+                if kw in self.pos:
+                    self._log.warn(Code(31522, kw))
                     return 2
                 else:
-                    cls.pos.append(kw)
+                    self.pos.append(kw)
                     return 0
             else:
-                cls._log.warn(Code(31521, kw))
+                self._log.warn(Code(31521, kw))
                 return 1
 
-    @classmethod
-    def add_neg(cls, kw: str) -> int:
-        with cls._lock:
+    def add_neg(self, kw: str) -> int:
+        with self._lock:
             if isinstance(kw, str):
-                if kw in cls.neg:
-                    cls._log.warn(Code(31532, kw))
+                if kw in self.neg:
+                    self._log.warn(Code(31532, kw))
                     return 2
                 else:
-                    cls.neg.append(kw)
+                    self.neg.append(kw)
                     return 0
             else:
-                cls._log.warn(Code(31531, kw))
+                self._log.warn(Code(31531, kw))
                 return 1
 
-    @classmethod
-    def remove_abs(cls, kw: str) -> int:
-        with cls._lock:
-            if kw in cls.abs:
-                cls.abs.remove(kw)
+    def remove_abs(self, kw: str) -> int:
+        with self._lock:
+            if kw in self.abs:
+                self.abs.remove(kw)
                 return 0
             else:
                 return 1
 
-    @classmethod
-    def remove_pos(cls, kw: str) -> int:
-        with cls._lock:
-            if kw in cls.pos:
-                cls.pos.remove(kw)
+    def remove_pos(self, kw: str) -> int:
+        with self._lock:
+            if kw in self.pos:
+                self.pos.remove(kw)
                 return 0
             else:
                 return 1
 
-    @classmethod
-    def remove_neg(cls, kw: str) -> int:
-        with cls._lock:
-            if kw in cls.neg:
-                cls.neg.remove(kw)
+    def remove_neg(self, kw: str) -> int:
+        with self._lock:
+            if kw in self.neg:
+                self.neg.remove(kw)
                 return 0
             else:
                 return 1

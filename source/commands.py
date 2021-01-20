@@ -8,7 +8,6 @@ from . import logger
 from . import storage
 from .cache import HashStorage
 from .codes import Code
-from .library import Keywords
 
 
 class Commands:
@@ -259,47 +258,68 @@ class Commands:
             self.log.info(Code(21102, f'{peer.name}: {inspect.stack()[0][3]}'))
             return True
 
-    def keywords(self, peer: Peer) -> dict:
+    def keywords(self, peer: Peer, parser: str) -> dict:
         self.log.info(Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))
-        return Keywords.export()
-
-    def keywords_dump(self, peer: Peer) -> int:
-        self.log.info(Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))
-        return Keywords.dump()
-
-    def keywords_sync(self, peer: Peer) -> int:
-        self.log.info(Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))
-        return Keywords.sync()
-
-    def keywords_clear(self, peer: Peer) -> int:
-        self.log.info(Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))
-        return Keywords.clear()
-
-    def keywords_load(self, peer: Peer) -> int:
-        self.log.info(Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))
-        return Keywords.load()
-
-    def keywords_add(self, peer: Peer, type_: str, kw: str) -> int:
-        self.log.info(Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))
-        if type_ == 'abs':
-            return Keywords.add_abs(kw)
-        elif type_ == 'pos':
-            return Keywords.add_pos(kw)
-        elif type_ == 'neg':
-            return Keywords.add_neg(kw)
+        if parser in core.script_manager.parsers:
+            return core.script_manager.parsers[parser].kw.export()
         else:
-            raise
+            raise IndexError(f'Parser "{parser}" not found')
 
-    def keywords_remove(self, peer: Peer, type_: str, kw: str) -> int:
+    def keywords_dump(self, peer: Peer, parser: str) -> int:
         self.log.info(Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))
-        if type_ == 'abs':
-            return Keywords.remove_abs(kw)
-        elif type_ == 'pos':
-            return Keywords.remove_pos(kw)
-        elif type_ == 'neg':
-            return Keywords.remove_neg(kw)
+        if parser in core.script_manager.parsers:
+            return core.script_manager.parsers[parser].kw.dump()
         else:
-            raise
+            raise IndexError(f'Parser "{parser}" not found')
+
+    def keywords_sync(self, peer: Peer, parser: str) -> int:
+        self.log.info(Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))
+        if parser in core.script_manager.parsers:
+            return core.script_manager.parsers[parser].sync()
+        else:
+            raise IndexError(f'Parser "{parser}" not found')
+
+    def keywords_clear(self, peer: Peer, parser: str) -> int:
+        self.log.info(Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))
+        if parser in core.script_manager.parsers:
+            return core.script_manager.parsers[parser].clear()
+        else:
+            raise IndexError(f'Parser "{parser}" not found')
+
+    def keywords_load(self, peer: Peer, parser: str) -> int:
+        self.log.info(Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))
+        if parser in core.script_manager.parsers:
+            return core.script_manager.parsers[parser].load()
+        else:
+            raise IndexError(f'Parser "{parser}" not found')
+
+    def keywords_add(self, peer: Peer, parser: str, type_: str, kw: str) -> int:
+        self.log.info(Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))
+        if parser in core.script_manager.parsers:
+            if type_ == 'abs':
+                return core.script_manager.parsers[parser].kw.add_abs(kw)
+            elif type_ == 'pos':
+                return core.script_manager.parsers[parser].kw.add_pos(kw)
+            elif type_ == 'neg':
+                return core.script_manager.parsers[parser].kw.add_neg(kw)
+            else:
+                raise
+        else:
+            raise IndexError(f'Parser "{parser}" not found')
+
+    def keywords_remove(self, peer: Peer, parser: str, type_: str, kw: str) -> int:
+        self.log.info(Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))
+        if parser in core.script_manager.parsers:
+            if type_ == 'abs':
+                return core.script_manager.parsers[parser].kw.remove_abs(kw)
+            elif type_ == 'pos':
+                return core.script_manager.parsers[parser].kw.remove_pos(kw)
+            elif type_ == 'neg':
+                return core.script_manager.parsers[parser].kw.remove_neg(kw)
+            else:
+                raise
+        else:
+            raise IndexError(f'Parser "{parser}" not found')
 
     def log_file_reset(self, peer: Peer) -> bool:
         self.log.info(Code(21101, f'{peer.name}: {inspect.stack()[0][3]}'))

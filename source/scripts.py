@@ -18,6 +18,7 @@ from . import logger
 from . import storage
 from . import version
 from .tools import MainStorage, ScriptStorage
+from .library import Keywords
 
 
 class ScriptNotFound(Exception):
@@ -408,7 +409,8 @@ class ScriptManager:
                     script['name'],
                     logger.Logger('Parser/' + script['name']),
                     api.SubProvider(script['name']),
-                    ScriptStorage(script['name'])
+                    ScriptStorage(script['name']),
+                    Keywords(script['name'])
                 )
             else:
                 self.parsers[script['name']] = getattr(module, 'Parser')
@@ -437,6 +439,7 @@ class ScriptManager:
             if self.scripts[name]['can_be_unloaded']:
                 self.event_handler.delete(name)
                 if name in self.parsers:
+                    self.parsers[name].kw.dump()
                     del self.parsers[name]
                 self._destroy(self.scripts[name]['_module'])
                 del self.scripts[name]
@@ -573,7 +576,8 @@ class ScriptManager:
                 name,
                 logger.Logger(f'parser/{name}'),
                 api.SubProvider(name),
-                ScriptStorage(name)
+                ScriptStorage(name),
+                Keywords(name)
             )
 
     def execute_parser(self, name: str, func: str, args: tuple) -> Any:

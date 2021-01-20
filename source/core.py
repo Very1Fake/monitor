@@ -774,7 +774,6 @@ class Core:
 
         # Staring
         storage.config_load()  # Load ./config.yaml
-        Keywords.load()
         HashStorage.load()  # Load success hashes from cache
 
         if storage.main.production:  # Notify about production mode
@@ -830,7 +829,6 @@ class Core:
             HashStorage.unload()  # Dump success hashes
             self.log.info(codes.Code(20105))
 
-            Keywords.dump()
             storage.config_dump()
 
             self.log.info(codes.Code(20106))
