@@ -7,7 +7,7 @@ from typing import TypeVar, List, Union, Dict, Generator, Optional
 
 from . import codes
 from . import logger
-from .library import Interval, Scheduled, Smart, SubProvider
+from .library import Interval, Scheduled, Smart, SubProvider, Keywords
 from .tools import ScriptStorage
 
 # Constants
@@ -599,12 +599,14 @@ class Parser(ABC):  # Class to implement by scripts with parser
     log: logger.Logger
     provider: SubProvider
     storage: ScriptStorage
+    kw: Keywords
 
-    def __init__(self, name: str, log: logger.Logger, provider_: SubProvider, storage: ScriptStorage):
+    def __init__(self, name: str, log: logger.Logger, provider: SubProvider, storage: ScriptStorage, kw: Keywords):
         self.name = name
         self.log = log
-        self.provider = provider_
+        self.provider = provider
         self.storage = storage
+        self.kw = kw
 
     @property
     def catalog(self) -> CatalogType:
