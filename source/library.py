@@ -3,11 +3,10 @@ import threading
 from dataclasses import dataclass, field
 from typing import Any, List, Dict, Union, Tuple
 
-import requests
 import ujson
 import urllib3
-from requests import adapters, exceptions
-from requests.cookies import cookiejar_from_dict
+from pycurl_requests import exceptions, requests
+from pycurl_requests.cookies import cookiejar_from_dict
 
 from . import logger
 from . import storage
@@ -418,7 +417,6 @@ class SubProvider(ProviderCore):
             sess.max_redirects = storage.sub_provider.max_redirects
             sess.params = params
             sess.verify = storage.sub_provider.verify
-            sess.mount('http://', adapters.HTTPAdapter(pool_maxsize=1, pool_connections=1))
 
             if storage.sub_provider.compression:
                 sess.headers.update({'Accept-Encoding': storage.sub_provider.comp_type})
