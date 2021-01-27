@@ -120,10 +120,9 @@ class Provider(NamedTuple):
 
 
 class SubProvider(NamedTuple):
-    max_redirects: int = 5
-    max_retries: int = 3
-    connect_timeout: float = 1.
-    read_timeout: float = 2.
+    redirects: int = 5
+    connect_timeout: int = 1
+    read_timeout: int = 2
     compression: bool = False
     comp_type: str = 'gzip, deflate, br'
     verify: bool = False
