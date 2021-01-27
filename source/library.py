@@ -2,21 +2,19 @@ import collections
 import threading
 from dataclasses import dataclass, field
 from typing import Any, List, Dict, Union, Tuple
+from io import BytesIO, StringIO
+from urllib.parse import urlencode
 
 import ujson
-import urllib3
-from pycurl_requests import exceptions, requests
-from pycurl_requests.cookies import cookiejar_from_dict
+import pycurl
 
 from . import logger
 from . import storage
 from .codes import Code
 from .tools import SmartGen, SmartGenType, MainStorage, ScriptStorage
+from pycurl_requests import requests
 
 # TODO: Add export/import of Proxy.bad
-
-
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 # Exception classes
@@ -175,7 +173,19 @@ class Proxy:
     def stats(self, elapsed: Union[float, int]) -> None:
         self._stats.appendleft(round(elapsed, 5))
 
-    def use(self) -> Dict[str, str]:
+    def url(self) -> str:
+        if self.address:
+            return 'http://' + self.address
+        else:
+            return ''
+
+    def userpwd(self) -> str:
+        if self.login:
+            return self.login + ':' + self.password
+        else:
+            return ''
+
+    def prepare(self) -> Dict[str, str]:
         if self.address:
             return {
                 'http': f'http://{f"{self.login}:{self.password}@" if self.login else ""}{self.address}/',
@@ -225,7 +235,7 @@ class Provider(ProviderCore):
     def proxy_test(self, proxy: Proxy, force: bool = False) -> bool:
         try:
             self.log.info(Code(21202, repr(proxy)))
-            if (code := requests.get(storage.provider.test_url, proxies=proxy.use(),
+            if (code := requests.get(storage.provider.test_url, proxies=proxy.prepare(),
                                      timeout=storage.provider.proxy_timeout).status_code) != 200:
                 self.log.info(Code(41202, repr(proxy)))
                 if force:
@@ -351,6 +361,34 @@ class Provider(ProviderCore):
         self.log.warn(Code(31205))
 
 
+class Response:
+    elapsed: float
+    status_code: int
+    headers: Dict[str, str]
+    url: str
+    content: BytesIO
+
+    def __init__(self, content: BytesIO, url: str, elapsed: float, status: int, headers: Dict[str, str]):
+        self.elapsed = elapsed
+        self.status_code = status
+        self.headers = headers
+        self.url = url
+        self.content = content
+
+    def bad(self) -> bool:
+        return 400 <= self.status_code <= 599
+
+    def ok(self) -> bool:
+        return self.status_code < 400
+
+    @property
+    def text(self) -> str:
+        return self.content.decode('utf8')
+
+    def json(self):
+        return ujson.loads(self.text)
+
+
 class SubProvider(ProviderCore):
     _log: logger.Logger
     _script: str
@@ -379,63 +417,101 @@ class SubProvider(ProviderCore):
             url: str,
             proxy: bool = False,
             *,
-            params: Dict[str, str] = None,
+            params: Dict[str, Union[str, int, float, bool]] = None,
             headers: Dict[str, str] = None,
-            cookies: Dict[str, Any] = None,
             data: Union[str, bytes] = '',
-            method: str = 'get'
-    ) -> Tuple[bool, Union[requests.Response, Exception]]:
-        if not isinstance(url, str):
+            method: str = 'GET'
+    ) -> Tuple[bool, Union[Response, Exception]]:
+        c = pycurl.Curl()
+
+        if isinstance(url, str):
+            c.setopt(c.URL, url)
+        else:
             raise TypeError('url must be str')
-        if not isinstance(proxy, bool):
+
+        if isinstance(proxy, bool):
+            proxy_ = self._proxy() if proxy else Proxy('')
+
+            if proxy:
+                c.setopt(c.PROXY_SSL_VERIFYHOST, 0)
+                c.setopt(c.PROXY_SSL_VERIFYPEER, 0)
+                c.setopt(c.PROXY, proxy_.url())
+                c.setopt(c.PROXYTYPE, 0)
+                c.setopt(c.PROXYUSERPWD, proxy_.userpwd())
+        else:
             raise TypeError('proxy must be bool')
-        if params:
-            if not isinstance(params, dict):
-                raise TypeError('params must be dict')
-        else:
-            params: Dict[str, str] = {}
+
         if headers:
-            if not isinstance(headers, dict):
+            if isinstance(headers, dict):
+                c.setopt(c.HTTPHEADER, [k + ': ' + v for k, v in headers.items()])
+            else:
                 raise TypeError('header must be dict')
+
+        if isinstance(data, str):
+            c.setopt(c.READDATA, StringIO(data))
+        elif isinstance(data, bytes):
+            c.setopt(c.READDATA, BytesIO(data))
         else:
-            headers: Dict[str, str] = {}
-        if cookies:
-            if not isinstance(cookies, dict):
-                raise TypeError('cookies must be dict')
-        else:
-            cookies: Dict[str, Any] = {}
-        if not isinstance(data, (str, bytes)):
             raise TypeError('data must be str or bytes')
-        if not isinstance(method, str):
+        c.setopt(c.POSTFIELDSIZE, len(data))
+
+        if isinstance(method, str):
+            if method.lower() == 'get':
+                pass
+            elif method.lower() == 'post':
+                c.setopt(c.POST, 1)
+            else:
+                raise ValueError('Unsupported method')
+        else:
             raise TypeError('method must be str')
 
-        proxy_ = self._proxy() if proxy else Proxy('')
+        if params:
+            if isinstance(params, dict):
+                c.setopt(c.POSTFIELDS, urlencode(params))
+            else:
+                raise TypeError('params must be dict')
 
-        with requests.Session() as sess:
-            sess.cookies = cookiejar_from_dict(cookies)
-            sess.headers = headers
-            sess.max_redirects = storage.sub_provider.max_redirects
-            sess.params = params
-            sess.verify = storage.sub_provider.verify
+        if storage.sub_provider.compression:
+            c.setopt(c.ENCODING, storage.sub_provider.comp_type)
 
-            if storage.sub_provider.compression:
-                sess.headers.update({'Accept-Encoding': storage.sub_provider.comp_type})
+        if (mr := storage.sub_provider.redirects) > 0:
+            c.setopt(c.FOLLOWLOCATION, 1)
+            c.setopt(pycurl.MAXREDIRS, mr)
+        else:
+            c.setopt(c.FOLLOWLOCATION, 0)
 
-            for i in range(storage.sub_provider.max_retries):
-                try:
-                    resp = sess.request(method, url, data=data)
-                except (exceptions.Timeout, exceptions.ProxyError, exceptions.ChunkedEncodingError) as e:
-                    if proxy:
-                        proxy_.bad += 1
-                        proxy_.stats = -1
-                    self._log.test(Code(11301, f'{type(e)}: {e!s}'), threading.current_thread().name)
-                    continue
-                except exceptions.RequestException as e:
-                    self._log.error(Code(41301, f'{type(e)}: {e!s}'), threading.current_thread().name)
-                    return False, e
+        resp_headers = {}
+
+        def formatter(line):
+            line = line.decode('utf8')
+
+            if ':' in line:
+                k, v = line.split(':', 1)
+                k = k.strip()
+
+                if k in resp_headers:
+                    if isinstance(resp_headers[k], list):
+                        resp_headers[k].append(k)
+                    else:
+                        resp_headers[k] = [resp_headers[k], v]
                 else:
-                    proxy_.stats = resp.elapsed.microseconds * 1000000
-                    return True, resp
+                    resp_headers[k] = v.strip()
+
+        c.setopt(c.HEADERFUNCTION, formatter)
+        c.setopt(c.CONNECTTIMEOUT, ct := storage.sub_provider.connect_timeout)
+        c.setopt(c.TIMEOUT, storage.sub_provider.read_timeout + ct)
+
+        try:
+            resp = Response(c.perform_rb(), url, c.getinfo(c.TOTAL_TIME), c.getinfo(c.RESPONSE_CODE), resp_headers)
+        except pycurl.error as e:
+            if proxy:
+                proxy_.bad += 1
+                proxy_.stats = -1
+            self._log.error(Code(41301, f'{type(e)}: {e!s}'), threading.current_thread().name)
+            return False, e
+        else:
+            proxy_.stats = resp.elapsed
+            return True, resp
 
 
 class Keywords:

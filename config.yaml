@@ -61,10 +61,9 @@ queues:
 sub_provider:
   comp_type: gzip, deflate, br
   compression: false
-  connect_timeout: 1.0
-  max_redirects: 5
-  max_retries: 3
-  read_timeout: 2.0
+  connect_timeout: 2
+  read_timeout: 3
+  redirects: 5
   verify: false
 thread_manager:
   lock_ticks: 16
