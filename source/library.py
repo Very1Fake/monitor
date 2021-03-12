@@ -1,18 +1,19 @@
 import collections
 import threading
 from dataclasses import dataclass, field
-from typing import Any, List, Dict, Union, Tuple
 from io import BytesIO, StringIO
+from typing import Any, List, Dict, Union, Tuple
 from urllib.parse import urlencode
 
-import ujson
 import pycurl
+import ujson
+from pycurl_requests import requests
 
 from . import logger
 from . import storage
 from .codes import Code
 from .tools import SmartGen, SmartGenType, MainStorage, ScriptStorage
-from pycurl_requests import requests
+
 
 # TODO: Add export/import of Proxy.bad
 
