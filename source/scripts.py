@@ -17,8 +17,8 @@ from . import codes
 from . import logger
 from . import storage
 from . import version
-from .tools import MainStorage, ScriptStorage
 from .library import Keywords
+from .tools import MainStorage, ScriptStorage
 
 
 class ScriptNotFound(Exception):

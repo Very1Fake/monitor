@@ -17,7 +17,7 @@ from . import logger
 from . import scripts
 from . import storage
 from .cache import UniquenessError, HashStorage
-from .library import PrioritizedItem, UniqueSchedule, Provider, MainStorage, Keywords
+from .library import PrioritizedItem, UniqueSchedule, Provider, MainStorage
 
 
 # TODO: throw() for state setters

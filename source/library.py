@@ -1,18 +1,19 @@
 import collections
 import threading
 from dataclasses import dataclass, field
-from typing import Any, List, Dict, Union, Tuple
 from io import BytesIO, StringIO
+from typing import Any, List, Dict, Union, Tuple
 from urllib.parse import urlencode
 
-import ujson
 import pycurl
+import ujson
+from pycurl_requests import requests
 
 from . import logger
 from . import storage
 from .codes import Code
 from .tools import SmartGen, SmartGenType, MainStorage, ScriptStorage
-from pycurl_requests import requests
+
 
 # TODO: Add export/import of Proxy.bad
 
@@ -541,17 +542,23 @@ class Keywords:
         with self._lock:
             return {'absolute': self.abs, 'positive': self.pos, 'negative': self.neg}
 
-    def check(self, s: str, div: str = ' ') -> bool:
-        has_pos: bool = False
-        for i in s.split(div):
-            if i.lower() in self.abs:
+    def check(self, s: str, div: str = '') -> bool:
+        if div != '':
+            s = s.replace(div, ' ')
+
+        for i in self.abs:
+            if i in s.lower():
                 return True
-            elif i.lower() in self.neg:
+
+        for i in self.neg:
+            if i in s.lower():
                 return False
-            elif not has_pos and i.lower() in self.pos:
-                has_pos = True
-        else:
-            return has_pos
+
+        for i in self.pos:
+            if i in s.lower():
+                return True
+
+        return False
 
     def dump(self) -> int:
         with self._lock:
