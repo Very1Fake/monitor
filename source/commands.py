@@ -275,21 +275,21 @@ class Commands:
     def keywords_sync(self, peer: Peer, parser: str) -> int:
         self.log.info(Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))
         if parser in core.script_manager.parsers:
-            return core.script_manager.parsers[parser].sync()
+            return core.script_manager.parsers[parser].kw.sync()
         else:
             raise IndexError(f'Parser "{parser}" not found')
 
     def keywords_clear(self, peer: Peer, parser: str) -> int:
         self.log.info(Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))
         if parser in core.script_manager.parsers:
-            return core.script_manager.parsers[parser].clear()
+            return core.script_manager.parsers[parser].kw.clear()
         else:
             raise IndexError(f'Parser "{parser}" not found')
 
     def keywords_load(self, peer: Peer, parser: str) -> int:
         self.log.info(Code(21103, f'{peer.name}: {inspect.stack()[0][3]}'))
         if parser in core.script_manager.parsers:
-            return core.script_manager.parsers[parser].load()
+            return core.script_manager.parsers[parser].kw.load()
         else:
             raise IndexError(f'Parser "{parser}" not found')
 
